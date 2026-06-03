@@ -1,0 +1,2236 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Dieline Tool</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.3.1/umd/react.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.3.1/umd/react-dom.production.min.js"></script>
+<script src="https://cdn.tailwindcss.com"></script>
+<style>
+  html,body,#root{margin:0;padding:0;width:100%;height:100vh;background:#09090b;overflow:hidden}
+  @media(max-width:768px){.grid.md\:grid-cols-\[270px_1fr\]{grid-template-columns:1fr!important}}
+</style>
+</head>
+<body>
+<div id="root" style="height:100vh"></div>
+<script>
+const {
+  useMemo,
+  useState,
+  useRef,
+  useCallback
+} = React;
+const Icon = ({
+  d,
+  className
+}) => /*#__PURE__*/React.createElement("svg", {
+  className: className,
+  viewBox: "0 0 24 24",
+  fill: "none",
+  stroke: "currentColor",
+  strokeWidth: "2",
+  strokeLinecap: "round",
+  strokeLinejoin: "round"
+}, /*#__PURE__*/React.createElement("path", {
+  d: d
+}));
+const Download = ({
+  className
+}) => /*#__PURE__*/React.createElement(Icon, {
+  className: className,
+  d: "M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M7 10l5 5 5-5M12 15V3"
+});
+const Square = ({
+  className
+}) => /*#__PURE__*/React.createElement(Icon, {
+  className: className,
+  d: "M3 3h18v18H3z"
+});
+const ChevronDown = ({
+  className
+}) => /*#__PURE__*/React.createElement(Icon, {
+  className: className,
+  d: "M6 9l6 6 6-6"
+});
+const Grid3x3 = ({
+  className
+}) => /*#__PURE__*/React.createElement(Icon, {
+  className: className,
+  d: "M3 3h18v18H3zM3 9h18M3 15h18M9 3v18M15 3v18"
+});
+const Ruler = ({
+  className
+}) => /*#__PURE__*/React.createElement(Icon, {
+  className: className,
+  d: "M3 5h18M3 5v2M8 5v1M13 5v2M18 5v1M3 19h18"
+});
+const LayoutGrid = ({
+  className
+}) => /*#__PURE__*/React.createElement(Icon, {
+  className: className,
+  d: "M3 3h7v7H3zM14 3h7v7h-7zM3 14h7v7H3zM14 14h7v7h-7z"
+});
+const RotateCw = ({
+  className
+}) => /*#__PURE__*/React.createElement(Icon, {
+  className: className,
+  d: "M21 2v6h-6M21 13a9 9 0 11-3-7.7L21 8"
+});
+const T15 = Math.tan(Math.PI / 12),
+  SW = 0.1;
+class Path {
+  constructor(pts, kind = 'cut') {
+    this.pts = pts.map(p => [p[0], p[1]]);
+    this.kind = kind;
+  }
+  bbox() {
+    let x0 = 1e9,
+      y0 = 1e9,
+      x1 = -1e9,
+      y1 = -1e9;
+    for (const [x, y] of this.pts) {
+      x0 = Math.min(x0, x);
+      y0 = Math.min(y0, y);
+      x1 = Math.max(x1, x);
+      y1 = Math.max(y1, y);
+    }
+    return [x0, y0, x1, y1];
+  }
+  dup() {
+    return new Path(this.pts, this.kind);
+  }
+  rotate(d) {
+    const [x0, y0, x1, y1] = this.bbox(),
+      cx = (x0 + x1) / 2,
+      cy = (y0 + y1) / 2,
+      r = d * Math.PI / 180,
+      co = Math.cos(r),
+      si = Math.sin(r);
+    this.pts = this.pts.map(([x, y]) => [(x - cx) * co - (y - cy) * si + cx, (x - cx) * si + (y - cy) * co + cy]);
+    return this;
+  }
+  setTop(v) {
+    const d = v - this.bbox()[3];
+    this.pts = this.pts.map(([x, y]) => [x, y + d]);
+    return this;
+  }
+  setLeft(v) {
+    const d = v - this.bbox()[0];
+    this.pts = this.pts.map(([x, y]) => [x + d, y]);
+    return this;
+  }
+}
+function sxSet(w) {
+  let s1 = 7,
+    s2 = 3,
+    s3 = 2,
+    s4 = 6,
+    y1 = 5;
+  if (w >= 250) {
+    s1 *= 1.42857;
+    s2 *= 2.5;
+    s3 *= 2.5;
+    y1 *= 1.5;
+  } else if (w >= 120) {
+    s1 *= 1.14286;
+    s2 *= 2;
+    s3 *= 2;
+    y1 *= 1.2;
+  }
+  return {
+    sx1: s1,
+    sx2: s2,
+    sx3: s3,
+    sx4: s4,
+    sy1: y1
+  };
+}
+function makeTuck(x1, y1, x4, y4, z, ys, kind = 'cut') {
+  const N = 6,
+    pts = [[x1, y1]];
+  for (let i = 1; i < N; i++) {
+    const t = i / N;
+    pts.push([x1 + z * t * t * t, y1 + ys * z * t * t * (3 - 2 * t)]);
+  }
+  pts.push([x1 + z, y1 + ys * z], [x4 - z, y4 + ys * z]);
+  for (let i = 1; i < N; i++) {
+    const t = i / N,
+      s = 1 - t;
+    pts.push([x4 - z * s * s * s, y4 + ys * z * s * s * (1 + 2 * t)]);
+  }
+  pts.push([x4, y4]);
+  return new Path(pts, kind);
+}
+
+/* 7 loại hộp — unchanged */
+function napTrenDuoi({
+  L: l,
+  W: w,
+  H: h,
+  p,
+  z,
+  sx,
+  dustH: dh
+}) {
+  const {
+    sx1,
+    sx2,
+    sx3,
+    sy1
+  } = sxSet(w);
+  const P = [];
+  const C = a => P.push(new Path(a, 'crease')),
+    U = a => P.push(new Path(a, 'cut'));
+  const myT = h + (dh + z + p) / 2,
+    myB = -(dh + z + p) / 2;
+  C([[0, 0], [0, h]]);
+  C([[0, h + p], [l, h + p]]);
+  C([[sx1, h + w], [l - sx1, h + w]]);
+  C([[sx1, -w], [l - sx1, -w]]);
+  C([[l, h], [l, 0], [l + w, 0], [l + w, h], [l, h]]);
+  C([[2 * (l + w) - p, h], [2 * l + w, h], [2 * l + w, 0], [2 * (l + w) - p, 0]]);
+  C([[0, -p], [l, -p]]);
+  P.push(makeTuck(p, h + w + p, l - p, h + w + p, z, 1));
+  U([[0, h], [0, h + w + p], [sx1, h + w + p], [sx1, h + w - 2 * p]]);
+  U([[l, h], [l, h + w + p], [l - sx1, h + w + p], [l - sx1, h + w - 2 * p]]);
+  U([[l, h], [l + sx2, h + sx2], [l + 2 * sx2, myT], [l + w - 2.5 * sx2, myT], [l + w - p - sx3, h + sy1 + sx3], [l + w - p, h + sy1], [l + w - p, h]]);
+  U([[2 * l + w + p, h], [2 * l + w + p, h + sy1], [2 * l + w + p + sx3, h + sy1 + sx3], [2 * l + w + 2.5 * sx2, myT], [2 * l + 2 * w - p - 2 * sx2, myT], [2 * (l + w) - p - sx2, h + sx2], [2 * (l + w) - p, h]]);
+  P.push(makeTuck(p, -w - p, l - p, -w - p, z, -1));
+  U([[0, 0], [0, -w - p], [sx1, -w - p], [sx1, -(w - 2 * p)]]);
+  U([[l, 0], [l, -w - p], [l - sx1, -w - p], [l - sx1, -(w - 2 * p)]]);
+  U([[l, 0], [l + sx2, -sx2], [l + 2 * sx2, myB], [l + w - 2.5 * sx2, myB], [l + w - p - sx3, -sy1 - sx3], [l + w - p, -sy1], [l + w - p, 0]]);
+  U([[2 * l + w + p, 0], [2 * l + w + p, -sy1], [2 * l + w + p + sx3, -sy1 - sx3], [2 * l + w + 2.5 * sx2, myB], [2 * l + 2 * w - p - 2 * sx2, myB], [2 * (l + w) - p - sx2, -sx2], [2 * (l + w) - p, 0]]);
+  U([[0, h], [-sx, h - sx * T15], [-sx, sx * T15], [0, 0]]);
+  U([[l + w - p, 0], [2 * l + w + p, 0]]);
+  U([[l + w - p, h], [2 * l + w + p, h]]);
+  U([[2 * (l + w) - p, 0], [2 * (l + w) - p, h]]);
+  return P;
+}
+function napTren({
+  L: l,
+  W: w,
+  H: h,
+  p,
+  z,
+  sx
+}) {
+  const {
+    sx2
+  } = sxSet(w);
+  const P = [];
+  const C = a => P.push(new Path(a, 'crease')),
+    U = a => P.push(new Path(a, 'cut'));
+  C([[0, 0], [0, h]]);
+  C([[l + w, h + p], [2 * l + w, h + p]]);
+  C([[l + w, h + w], [2 * l + w, h + w]]);
+  C([[l + w, -w], [2 * l + w, -w]]);
+  C([[l, h], [l, 0], [l + w, 0], [l + w, h], [l, h]]);
+  C([[2 * (l + w) - p, h], [2 * l + w, h], [2 * l + w, 0], [2 * (l + w) - p, 0]]);
+  C([[l + w, -p], [2 * l + w, -p]]);
+  const ml = makeTuck(l + w, h + w + p, 2 * l + w, h + w + p, z, 1);
+  P.push(ml);
+  const l21 = new Path([[l + w, h], [l + w, h + w + p]]);
+  P.push(l21);
+  U([[l, h], [l + sx2, h + sx2], [l + 2 * sx2, h + (w + z + p) / 2], [l + w - 2 * sx2, h + (w + z + p) / 2], [l + w - sx2, h + sx2], [l + w, h]]);
+  const l23 = new Path([[2 * l + w, h], [2 * l + w, h + w + p]]);
+  P.push(l23);
+  U([[2 * l + w, h], [2 * l + w + sx2, h + sx2], [2 * l + w + 2 * sx2, h + (w + z + p) / 2], [2 * l + 2 * w - p - 2 * sx2, h + (w + z + p) / 2], [2 * (l + w) - p - sx2, h + sx2], [2 * (l + w) - p, h]]);
+  P.push(l21.dup().rotate(180).setTop(0).setLeft(2 * l + w - SW / 2));
+  U([[l, 0], [l + sx2, -sx2], [l + 2 * sx2, -(w + z + p) / 2], [l + w - 2 * sx2, -(w + z + p) / 2], [l + w - sx2, -sx2], [l + w, 0]]);
+  P.push(l23.dup().rotate(180).setTop(0).setLeft(l + w - SW / 2));
+  U([[2 * l + w, 0], [2 * l + w + sx2, -sx2], [2 * l + w + 2 * sx2, -(w + z + p) / 2], [2 * l + 2 * w - p - 2 * sx2, -(w + z + p) / 2], [2 * (l + w) - p - sx2, -sx2], [2 * (l + w) - p, 0]]);
+  P.push(ml.dup().rotate(180).setTop(-p - w).setLeft(l + w - SW / 2));
+  U([[0, h], [-0.25 * sx, h], [-sx, h - sx * T15], [-sx, sx * T15], [-0.25 * sx, 0], [0, 0], [l, 0]]);
+  U([[0, h], [l, h]]);
+  U([[2 * (l + w) - p, 0], [2 * (l + w) - p, h]]);
+  return P;
+}
+function dayGai({
+  L: l,
+  W: w,
+  H: h,
+  p,
+  z,
+  sx
+}) {
+  let {
+    sx1,
+    sx2,
+    sx3,
+    sx4,
+    sy1
+  } = sxSet(w);
+  const P = [];
+  const C = a => P.push(new Path(a, 'crease')),
+    U = a => P.push(new Path(a, 'cut'));
+  C([[0, 0], [0, h]]);
+  C([[0, h + p], [l, h + p]]);
+  C([[sx1, h + w], [l - sx1, h + w]]);
+  C([[l + w, 0], [2 * l + w, 0]]);
+  C([[l, h], [l, 0], [l + w, 0], [l + w, h], [l, h]]);
+  C([[0, 0], [l, 0]]);
+  C([[2 * (l + w) - p, h], [2 * l + w, h], [2 * l + w, 0], [2 * (l + w) - p, 0]]);
+  P.push(makeTuck(p, h + w + p, l - p, h + w + p, z, 1));
+  const ml1 = new Path([[l + w / 2, sx3 + sx4 - 3 * w / 4], [l + w / 2 + sx4, sx3 - 3 * w / 4]]);
+  P.push(ml1);
+  U([[0, h], [0, h + w + p], [sx1, h + w + p], [sx1, h + w - 2 * p]]);
+  U([[l, h], [l + sx2, h + sx2], [l + 2 * sx2, h + (w + z + p) / 2], [l + w - 2.5 * sx2, h + (w + z + p) / 2], [l + w - p - sx3, h + sy1 + sx3], [l + w - p, h + sy1], [l + w - p, h]]);
+  U([[l, h], [l, h + w + p], [l - sx1, h + w + p], [l - sx1, h + w - 2 * p]]);
+  U([[2 * l + w + p, h], [2 * l + w + p, h + sy1], [2 * l + w + p + sx3, h + sy1 + sx3], [2 * l + w + 2.5 * sx2, h + (w + z + p) / 2], [2 * l + 2 * w - p - 2 * sx2, h + (w + z + p) / 2], [2 * (l + w) - p - sx2, h + sx2], [2 * (l + w) - p, h]]);
+  U([[l + w, 0], [l + 3 * w / 2, -w / 2], [l + 3 * w / 2, -3 * w / 4], [2 * l + w / 2, -3 * w / 4], [2 * l + w / 2, -w / 2], [2 * l + w, 0]]);
+  U([[2 * (l + w) - p, 0], [2 * l + 3 * w / 2, -w / 2], [2 * l + 3 * w / 2, sx3 - 3 * w / 4 + sx4]]);
+  U([[2 * l + 3 * w / 2 - sx4, -3 * w / 4 + sx3], [2 * l + w, -3 * w / 4 + sx3], [2 * l + w, 0]]);
+  P.push(ml1.dup().rotate(90).setTop(sx3 + sx4 - 3 * w / 4).setLeft(2 * l + 3 * w / 2 - sx4));
+  U([[l, 0], [l + w / 2, -w / 2], [l + w / 2, sx3 - 3 * w / 4 + sx4]]);
+  U([[l + w / 2 + sx4, -3 * w / 4 + sx3], [l + w, -3 * w / 4 + sx3], [l + w, 0]]);
+  U([[0, 0], [0, -3 * w / 4], [w / 2, -3 * w / 4], [w / 2, -w / 2], [l - w / 2, -w / 2], [l - w / 2, -3 * w / 4], [l, -3 * w / 4], [l, 0]]);
+  U([[0, h], [-sx, h - sx * T15], [-sx, sx * T15], [0, 0]]);
+  U([[l + w - p, h], [2 * l + w + p, h]]);
+  U([[2 * (l + w) - p, 0], [2 * (l + w) - p, h]]);
+  return P;
+}
+function hopThang(par) {
+  const {
+    L: l,
+    W: w,
+    H: h,
+    p,
+    z,
+    sx
+  } = par;
+  const {
+    sx1,
+    sx2,
+    sx3,
+    sy1
+  } = sxSet(w);
+  const P = [];
+  const C = a => P.push(new Path(a, 'crease')),
+    U = a => P.push(new Path(a, 'cut'));
+  C([[0, 0], [0, h]]);
+  C([[0, h + p], [l, h + p]]);
+  C([[sx1, h + w], [l - sx1, h + w]]);
+  C([[l, h], [l, 0], [l + w, 0], [l + w, h], [l, h]]);
+  C([[2 * (l + w) - p, h], [2 * l + w, h], [2 * l + w, 0], [2 * (l + w) - p, 0]]);
+  const ml = makeTuck(p, h + w + p, l - p, h + w + p, z, 1);
+  P.push(ml);
+  const l21 = new Path([[0, h], [0, h + w + p], [sx1, h + w + p], [sx1, h + w - 2 * p]]);
+  P.push(l21);
+  const l22 = new Path([[l, h], [l + sx2, h + sx2], [l + 2 * sx2, h + (w + z + p) / 2], [l + w - 2.5 * sx2, h + (w + z + p) / 2], [l + w - p - sx3, h + sy1 + sx3], [l + w - p, h + sy1], [l + w - p, h]]);
+  P.push(l22);
+  const l23 = new Path([[l, h], [l, h + w + p], [l - sx1, h + w + p], [l - sx1, h + w - 2 * p]]);
+  P.push(l23);
+  U([[2 * l + w + p, h], [2 * l + w + p, h + sy1], [2 * l + w + p + sx3, h + sy1 + sx3], [2 * l + w + 2.5 * sx2, h + (w + z + p) / 2], [2 * l + 2 * w - p - 2 * sx2, h + (w + z + p) / 2], [2 * (l + w) - p - sx2, h + sx2], [2 * (l + w) - p, h]]);
+  P.push(l21.dup().rotate(180).setTop(0).setLeft(2 * l + w - sx1 - SW / 2));
+  P.push(l22.dup().rotate(180).setTop(0).setLeft(l + p - SW / 2));
+  P.push(l23.dup().rotate(180).setTop(0).setLeft(l + w - SW / 2));
+  U([[2 * l + w, 0], [2 * l + w + sx2, -sx2], [2 * l + w + 2 * sx2, -(w + z + p) / 2], [2 * (l + w) - 2.5 * sx2, -(w + z + p) / 2], [2 * (l + w) - p - sx3, -sy1 - sx3], [2 * (l + w) - p, -sy1], [2 * (l + w) - p, 0]]);
+  P.push(ml.dup().rotate(180).setTop(-p - w).setLeft(l + w + p - SW / 2));
+  U([[0, h], [-sx, h - sx * T15], [-sx, sx * T15], [0, 0], [l, 0]]);
+  U([[l + w - p, h], [2 * l + w + p, h]]);
+  U([[2 * (l + w) - p, 0], [2 * (l + w) - p, h]]);
+  return P;
+}
+function duoiCungDinh({
+  L: l,
+  W: w,
+  H: h,
+  p,
+  z,
+  sx
+}) {
+  let {
+    sx1,
+    sx2,
+    sy1
+  } = sxSet(w);
+  const sx3 = 2 * p;
+  const P = [];
+  const C = a => P.push(new Path(a, 'crease')),
+    U = a => P.push(new Path(a, 'cut'));
+  C([[0, 0], [0, h]]);
+  C([[l + w, h + p], [2 * l + w, h + p]]);
+  C([[l + w + sx1, h + w], [2 * l + w - sx1, h + w]]);
+  C([[p, -p], [l - p, -p]]);
+  C([[l, h], [l, 0], [l + w, 0], [l + w, h], [l, h]]);
+  C([[l + w + p, -p], [2 * l + w - p, -p]]);
+  C([[2 * (l + w) - p, h], [2 * l + w, h], [2 * l + w, 0], [2 * (l + w) - p, 0]]);
+  P.push(makeTuck(l + w + p, h + w + p, 2 * l + w - p, h + w + p, z, 1));
+  U([[l + w, h], [l + w, h + w + p], [l + w + sx1, h + w + p], [l + w + sx1, h + w - 2 * p]]);
+  U([[l + p, h], [l + p, h + sy1], [l + p + sx2, h + sx2 + sy1], [l + p + 2.5 * sx2, h + (w + z + p) / 2], [l + w - 2 * sx2, h + (w + z + p) / 2], [l + w - sx2, h + sx2], [l + w, h]]);
+  U([[2 * l + w, h], [2 * l + w, h + w + p], [2 * l + w - sx1, h + w + p], [2 * l + w - sx1, h + w - 2 * p]]);
+  U([[2 * l + w, h], [2 * l + w + sx2, h + sx2], [2 * l + w + 2 * sx2, h + (w + z + p) / 2], [2 * l + 2 * w - p - 2.5 * sx2, h + (w + z + p) / 2], [2 * (l + w) - p - sx2, h + sx2 + sy1], [2 * (l + w) - p, h + sy1], [2 * (l + w) - p, h]]);
+  U([[0, 0], [sx2, -sx2], [2 * sx2, -(w - 6 * p)], [l - 2 * sx2, -(w - 6 * p)], [l - sx2, -sx2], [l, 0]]);
+  U([[l, 0], [l + sx2, -sx2], [l + 2 * sx2, -(w + z + p) / 2], [l + w - 2 * sx2, -(w + z + p) / 2], [l + w - sx2, -sx2], [l + w, 0]]);
+  U([[l + w, 0], [l + w + sx3, -sx3], [l + w + 1.5 * sx3, -(w - p)], [2 * l + w - 1.5 * sx3, -(w - p)], [2 * l + w - sx3, -sx3], [2 * l + w, 0]]);
+  U([[2 * l + w, 0], [2 * l + w + p + sx2, -sx2], [2 * l + w + 2 * sx2, -(w + z + p) / 2], [2 * l + 2 * w - p - 2 * sx2, -(w + z + p) / 2], [2 * (l + w) - p - sx2, -sx2], [2 * (l + w) - p, 0]]);
+  U([[0, h], [-sx, h - sx * T15], [-sx, sx * T15], [0, 0]]);
+  U([[0, h], [l + p, h]]);
+  U([[2 * (l + w) - p, 0], [2 * (l + w) - p, h]]);
+  return P;
+}
+function treoTai({
+  L: l,
+  W: w,
+  H: h,
+  p,
+  z,
+  sx
+}) {
+  let {
+    sx1,
+    sx2,
+    sy1
+  } = sxSet(w);
+  const sx3 = 2 * p;
+  const P = [];
+  const C = a => P.push(new Path(a, 'crease')),
+    U = a => P.push(new Path(a, 'cut'));
+  C([[0, 0], [0, h]]);
+  C([[l + w, h + p], [2 * l + w, h + p]]);
+  C([[l + w + sx1, h + w], [2 * l + w - sx1, h + w]]);
+  C([[p, -p], [l - p, -p]]);
+  C([[l, h], [l, 0], [l + w, 0], [l + w, h], [l, h]]);
+  C([[l + w + p, -p], [2 * l + w - p, -p]]);
+  C([[2 * (l + w) - p, h], [2 * l + w, h], [2 * l + w, 0], [2 * (l + w) - p, 0]]);
+  C([[0, h], [0, h + w], [l, h + w], [l, h]]);
+  P.push(makeTuck(l + w + p, h + w + p, 2 * l + w - p, h + w + p, z, 1));
+  U([[l + w, h], [l + w, h + w + p], [l + w + sx1, h + w + p], [l + w + sx1, h + w - 2 * p]]);
+  U([[l + p, h], [l + p, h + sy1], [l + p + sx2, h + sx2 + sy1], [l + p + 2.5 * sx2, h + (w + z + p) / 2], [l + w - 2 * sx2, h + (w + z + p) / 2], [l + w - sx2, h + sx2], [l + w, h]]);
+  U([[2 * l + w, h], [2 * l + w, h + w + p], [2 * l + w - sx1, h + w + p], [2 * l + w - sx1, h + w - 2 * p]]);
+  U([[2 * l + w, h], [2 * l + w + sx2, h + sx2], [2 * l + w + 2 * sx2, h + (w + z + p) / 2], [2 * l + 2 * w - p - 2.5 * sx2, h + (w + z + p) / 2], [2 * (l + w) - p - sx2, h + sx2 + sy1], [2 * (l + w) - p, h + sy1], [2 * (l + w) - p, h]]);
+  U([[0, 0], [sx2, -sx2], [2 * sx2, -(w - 6 * p)], [l - 2 * sx2, -(w - 6 * p)], [l - sx2, -sx2], [l, 0]]);
+  U([[l, 0], [l + sx2, -sx2], [l + 2 * sx2, -(w + z + p) / 2], [l + w - 2 * sx2, -(w + z + p) / 2], [l + w - sx2, -sx2], [l + w, 0]]);
+  U([[l + w, 0], [l + w + sx3, -sx3], [l + w + 1.5 * sx3, -(w - p)], [2 * l + w - 1.5 * sx3, -(w - p)], [2 * l + w - sx3, -sx3], [2 * l + w, 0]]);
+  U([[2 * l + w, 0], [2 * l + w + p + sx2, -sx2], [2 * l + w + 2 * sx2, -(w + z + p) / 2], [2 * l + 2 * w - p - 2 * sx2, -(w + z + p) / 2], [2 * (l + w) - p - sx2, -sx2], [2 * (l + w) - p, 0]]);
+  U([[0, h], [0, h + w], [l, h + w], [l, h]]);
+  U([[0, h], [-sx, h - sx * T15], [-sx, sx * T15], [0, 0]]);
+  U([[l, h], [l + p, h]]);
+  U([[2 * (l + w) - p, 0], [2 * (l + w) - p, h]]);
+  return P;
+}
+function carton({
+  L: l,
+  W: w,
+  H: h,
+  p,
+  sx
+}) {
+  const s2 = 1.5;
+  const P = [];
+  const C = a => P.push(new Path(a, 'crease')),
+    U = a => P.push(new Path(a, 'cut'));
+  C([[0, 0], [0, h], [0, h + p], [l, h + p]]);
+  C([[l + w, h + p], [2 * l + w, h + p]]);
+  C([[0, -p], [l, -p]]);
+  C([[l, h], [l, 0], [l + w, 0], [l + w, h], [l, h]]);
+  C([[l + w, -p], [2 * l + w, -p]]);
+  C([[2 * (l + w) - p, h], [2 * l + w, h], [2 * l + w, 0], [2 * (l + w) - p, 0]]);
+  U([[l + w, h], [l + w, h + w / 2], [2 * l + w, h + w / 2], [2 * l + w, h]]);
+  U([[l, h], [l + s2, h + s2], [l + s2, h + w / 2], [l + w - s2, h + w / 2], [l + w - s2, h + s2], [l + w, h]]);
+  U([[2 * l + w, h], [2 * l + w + s2, h + s2], [2 * l + w + s2, h + w / 2], [2 * l + 2 * w - p - s2, h + w / 2], [2 * (l + w) - p - s2, h + s2], [2 * (l + w) - p, h]]);
+  U([[0, h], [0, h + w / 2], [l, h + w / 2], [l, h]]);
+  U([[l + w, 0], [l + w, -w / 2], [2 * l + w, -w / 2], [2 * l + w, 0]]);
+  U([[l, 0], [l + s2, -s2], [l + s2, -w / 2], [l + w - s2, -w / 2], [l + w - s2, -s2], [l + w, 0]]);
+  U([[2 * l + w, 0], [2 * l + w + s2, -s2], [2 * l + w + s2, -w / 2], [2 * l + 2 * w - p - s2, -w / 2], [2 * (l + w) - p - s2, -s2], [2 * (l + w) - p, 0]]);
+  U([[0, 0], [0, -w / 2], [l, -w / 2], [l, 0]]);
+  U([[0, h], [-sx, h - sx * T15], [-sx, sx * T15], [0, 0]]);
+  U([[2 * (l + w) - p, 0], [2 * (l + w) - p, h]]);
+  return P;
+}
+/* ===== Geometry helpers: ellipse, rounded rect, circle ===== */
+function ellipsePts(cx, cy, rx, ry, n = 64) {
+  const pts = [];
+  for (let i = 0; i <= n; i++) {
+    const a = i / n * Math.PI * 2;
+    pts.push([cx + rx * Math.cos(a), cy + ry * Math.sin(a)]);
+  }
+  return pts;
+}
+function rrectPts(x, y, w, h, r, n = 12) {
+  r = Math.min(r, w / 2, h / 2);
+  const pts = [];
+  const P = Math.PI;
+  pts.push([x + r, y + h], [x + w - r, y + h]);
+  for (let i = 0; i <= n; i++) {
+    const a = P / 2 - i / n * P / 2;
+    pts.push([x + w - r + r * Math.cos(a), y + h - r + r * Math.sin(a)]);
+  }
+  pts.push([x + w, y + r]);
+  for (let i = 0; i <= n; i++) {
+    const a = -i / n * P / 2;
+    pts.push([x + w - r + r * Math.cos(a), y + r + r * Math.sin(a)]);
+  }
+  pts.push([x + r, y]);
+  for (let i = 0; i <= n; i++) {
+    const a = -P / 2 - i / n * P / 2;
+    pts.push([x + r + r * Math.cos(a), y + r + r * Math.sin(a)]);
+  }
+  pts.push([x, y + h - r]);
+  for (let i = 0; i <= n; i++) {
+    const a = P - i / n * P / 2;
+    pts.push([x + r + r * Math.cos(a), y + h - r + r * Math.sin(a)]);
+  }
+  pts.push(pts[0].slice());
+  return pts;
+}
+
+/* Tem nhãn */
+function temTron({
+  L
+}) {
+  return [new Path(ellipsePts(0, 0, L / 2, L / 2), 'cut')];
+}
+function temVuong({
+  L,
+  cr
+}) {
+  return [new Path(rrectPts(-L / 2, -L / 2, L, L, cr), 'cut')];
+}
+function temCN({
+  L,
+  W,
+  cr
+}) {
+  return [new Path(rrectPts(-L / 2, -W / 2, L, W, cr), 'cut')];
+}
+function temElip({
+  L,
+  W
+}) {
+  return [new Path(ellipsePts(0, 0, L / 2, W / 2), 'cut')];
+}
+
+/* Thẻ treo hang tag */
+function hangTag({
+  L,
+  W,
+  cr,
+  holeD,
+  holeY
+}) {
+  const P = [];
+  P.push(new Path(rrectPts(-L / 2, -W / 2, L, W, cr), 'cut'));
+  if (holeD > 0) {
+    P.push(new Path(ellipsePts(0, -W / 2 + holeY, holeD / 2, holeD / 2, 32), 'cut'));
+  }
+  return P;
+}
+function hangTagFold({
+  L,
+  W,
+  cr,
+  holeD,
+  holeY
+}) {
+  const P = [];
+  const hW = W / 2;
+  P.push(new Path(rrectPts(-L / 2, -hW, L, W * 2, cr), 'cut'));
+  P.push(new Path([[-L / 2, hW], [L / 2, hW]], 'crease')); // fold line
+  if (holeD > 0) {
+    P.push(new Path(ellipsePts(0, -hW + holeY, holeD / 2, holeD / 2, 32), 'cut'));
+    P.push(new Path(ellipsePts(0, hW + (W - holeY), holeD / 2, holeD / 2, 32), 'cut'));
+  }
+  return P;
+}
+
+/* Túi giấy — y-up: đáy=y nhỏ, nắp=y lớn */
+function tuiGiay2Manh({
+  W,
+  H,
+  G,
+  HTop: ht,
+  HBot: hb,
+  Glue: gl,
+  HR: hr,
+  HOX: hox,
+  HGAP: hgap
+}) {
+  const P = [],
+    hG = G / 2,
+    tW = G + W + G + W + gl,
+    tH = ht + H + hb;
+  const C = a => P.push(new Path(a, 'crease')),
+    U = a => P.push(new Path(a, 'cut'));
+  const x1 = G,
+    x2 = G + W,
+    x3 = 2 * G + W,
+    x4 = 2 * G + 2 * W;
+  const yDay = hb,
+    yNap = hb + H,
+    yMid = hb + hG;
+  const midL = hG,
+    midM = G + W + hG;
+  // full rectangle boundary
+  U([[0, 0], [tW, 0]]);
+  U([[tW, 0], [tW, tH]]);
+  U([[tW, tH], [0, tH]]);
+  U([[0, tH], [0, 0]]);
+  U([[0, yNap], [tW, yNap]]);
+  U([[0, yDay], [tW, yDay]]);
+  U([[x1, 0], [x1, tH]]);
+  U([[x2, 0], [x2, tH]]);
+  U([[x3, 0], [x3, tH]]);
+  U([[x4, 0], [x4, tH]]);
+  // folds — đáy tam giác ở DƯỚI (y nhỏ)
+  C([[midL, yNap], [midL, 0]]);
+  C([[midM, yNap], [midM, 0]]);
+  C([[midM, yMid], [midL, yMid]]);
+  C([[tW, G], [x4 - hb, 0]]);
+  C([[x3 + hb, 0], [midM, yMid]]);
+  C([[midM, yMid], [x2 - hb, 0]]);
+  C([[x1 + hb, 0], [midL, yMid]]);
+  C([[midL, yMid], [0, yDay]]);
+  // lỗ quai ở TRÊN (y lớn, gần nắp)
+  if (hr > 0) {
+    const r = hr / 2;
+    for (const [px, pw] of [[x1, W], [x3, W]]) {
+      const cx1 = px + pw / 2 - hox,
+        cx2 = px + pw / 2 + hox;
+      P.push(new Path(ellipsePts(cx1, yNap + hgap, r, r, 32), 'cut'));
+      P.push(new Path(ellipsePts(cx2, yNap + hgap, r, r, 32), 'cut'));
+      P.push(new Path(ellipsePts(cx1, yNap - hgap, r, r, 32), 'cut'));
+      P.push(new Path(ellipsePts(cx2, yNap - hgap, r, r, 32), 'cut'));
+    }
+  }
+  return P;
+}
+function tuiGiay1Manh({
+  W,
+  H,
+  G,
+  HTop: ht,
+  HBot: hb,
+  Glue: gl,
+  HR: hr,
+  HOX: hox,
+  HGAP: hgap
+}) {
+  const P = [],
+    hG = G / 2,
+    tW = G + W + gl,
+    tH = ht + H + hb;
+  const C = a => P.push(new Path(a, 'crease')),
+    U = a => P.push(new Path(a, 'cut'));
+  const xb = G,
+    xc = G + W;
+  const yDay = hb,
+    yNap = hb + H,
+    yMid = hb + hG;
+  const mL = hG;
+  U([[0, 0], [tW, 0]]);
+  U([[tW, 0], [tW, tH]]);
+  U([[tW, tH], [0, tH]]);
+  U([[0, tH], [0, 0]]);
+  U([[0, yNap], [tW, yNap]]);
+  U([[0, yDay], [tW, yDay]]);
+  U([[xb, 0], [xb, tH]]);
+  U([[xc, 0], [xc, tH]]);
+  C([[mL, yNap], [mL, 0]]);
+  C([[mL, yMid], [xc, yMid]]);
+  C([[xb + hb, 0], [mL, yMid]]);
+  C([[mL, yMid], [0, yDay]]);
+  C([[tW, G], [xc - hb, 0]]);
+  if (hr > 0) {
+    const r = hr / 2,
+      cx1 = xb + W / 2 - hox,
+      cx2 = xb + W / 2 + hox;
+    P.push(new Path(ellipsePts(cx1, yNap + hgap, r, r, 32), 'cut'));
+    P.push(new Path(ellipsePts(cx2, yNap + hgap, r, r, 32), 'cut'));
+    P.push(new Path(ellipsePts(cx1, yNap - hgap, r, r, 32), 'cut'));
+    P.push(new Path(ellipsePts(cx2, yNap - hgap, r, r, 32), 'cut'));
+  }
+  return P;
+}
+function tuiQuaiXoan({
+  W,
+  H,
+  G,
+  HBot: hb,
+  Glue: gl
+}) {
+  const P = [],
+    hG = G / 2,
+    tW = G + W + G + W + gl,
+    tH = H + hb;
+  const C = a => P.push(new Path(a, 'crease')),
+    U = a => P.push(new Path(a, 'cut'));
+  const x1 = G,
+    x2 = G + W,
+    x3 = 2 * G + W,
+    x4 = 2 * G + 2 * W;
+  const yDay = hb,
+    yMid = hb + hG;
+  const mL = hG,
+    mM = G + W + hG;
+  U([[0, 0], [tW, 0]]);
+  U([[tW, 0], [tW, tH]]);
+  U([[tW, tH], [0, tH]]);
+  U([[0, tH], [0, 0]]);
+  U([[0, yDay], [tW, yDay]]);
+  U([[x1, 0], [x1, tH]]);
+  U([[x2, 0], [x2, tH]]);
+  U([[x3, 0], [x3, tH]]);
+  U([[x4, 0], [x4, tH]]);
+  C([[mM, tH], [mM, 0]]);
+  C([[mL, tH], [mL, 0]]);
+  C([[tW, G], [x4 - hb, 0]]);
+  C([[x3 + hb, 0], [mM, yMid]]);
+  C([[mM, yMid], [x2 - hb, 0]]);
+  C([[mM, yMid], [mL, yMid]]);
+  C([[x1 + hb, 0], [mL, yMid]]);
+  C([[mL, yMid], [0, yDay]]);
+  return P;
+}
+
+/* FEFCO 0427 — Hộp carton nắp gài (exact interpolation from reference) */
+const CUT0427 = [[[657.5005, 273.719, 660.0005, 276.2189, 1], [660.0005, 276.2189, 660.0005, 583.2192, 1], [660.0005, 583.2192, 657.5005, 585.7191, 1], [657.5005, 585.7191, 657.5005, 599.5104, 652.7067, 612.7368, 644.1738, 622.4888, 2], [644.1738, 622.4888, 635.6409, 632.2407, 624.0678, 637.7192, 612.0005, 637.7192, 2], [612.0005, 637.7192, 608.5526, 637.7192, 605.246, 636.3496, 602.808, 633.9116, 2], [602.808, 633.9116, 600.3701, 631.4736, 599.0004, 628.167, 599.0004, 624.7192, 2], [599.0004, 624.7192, 599.0004, 585.7191, 1], [599.0004, 585.7191, 599.0004, 583.2192, 1], [599.0004, 583.2192, 599.0004, 582.9539, 598.8951, 582.6996, 598.7075, 582.5121, 2], [598.7075, 582.5121, 598.52, 582.3245, 598.2656, 582.2191, 598.0004, 582.2191, 2], [598.0004, 582.2191, 597.6926, 582.2191, 597.3922, 582.3138, 597.1401, 582.4904, 2], [597.1401, 582.4904, 596.8879, 582.667, 596.6962, 582.9169, 596.5909, 583.2061, 2], [596.5909, 583.2061, 578.5222, 632.8495, 1], [578.5222, 632.8495, 577.4693, 635.7421, 575.552, 638.2408, 573.0305, 640.0065, 2], [573.0305, 640.0065, 570.5088, 641.7721, 567.5051, 642.7192, 564.4268, 642.7192, 2], [564.4268, 642.7192, 427.1015, 642.7192, 1], [427.1015, 642.7192, 423.9785, 642.7192, 420.9334, 641.7445, 418.3909, 639.9309, 2], [418.3909, 639.9309, 415.8484, 638.1174, 413.9354, 635.5556, 412.9187, 632.6027, 2], [412.9187, 632.6027, 395.9185, 583.2308, 1], [395.9185, 583.2308, 395.8169, 582.9355, 395.6256, 582.6793, 395.3713, 582.498, 2], [395.3713, 582.498, 395.1171, 582.3166, 394.8126, 582.2191, 394.5003, 582.2191, 2], [394.5003, 582.2191, 394.2351, 582.2191, 393.9807, 582.3245, 393.7932, 582.5121, 2], [393.7932, 582.5121, 393.6056, 582.6996, 393.5003, 582.9539, 393.5003, 583.2192, 2], [393.5003, 583.2192, 393.5003, 666.7192, 1], [393.5003, 666.7192, 335.5002, 666.7192, 1], [335.5002, 666.7192, 335.5002, 588.7192, 1], [335.5002, 588.7192, 335.5002, 587.2192, 1], [335.5002, 587.2192, 335.5002, 586.8213, 335.3422, 586.4398, 335.0609, 586.1585, 2], [335.0609, 586.1585, 334.7796, 585.8772, 334.3981, 585.7191, 334.0002, 585.7191, 2], [334.0002, 585.7191, 333.6024, 585.7191, 333.2209, 585.8772, 332.9396, 586.1585, 2], [332.9396, 586.1585, 332.6582, 586.4398, 332.5002, 586.8213, 332.5002, 587.2192, 2], [332.5002, 587.2192, 332.5002, 649.2192, 1], [332.5002, 649.2192, 331.0002, 654.2192, 1], [331.0002, 654.2192, 331.0002, 713.9693, 1], [331.0002, 713.9693, 291.0002, 713.9693, 1], [291.0002, 713.9693, 289.5002, 717.7193, 1], [289.5002, 717.7193, 253.5002, 717.7193, 1], [253.5002, 717.7193, 252.0002, 713.9693, 1], [252.0002, 713.9693, 211.0002, 713.9693, 1], [211.0002, 713.9693, 209.5001, 717.7193, 1], [209.5001, 717.7193, 173.5001, 717.7193, 1], [173.5001, 717.7193, 172.0001, 713.9693, 1], [172.0001, 713.9693, 132.0001, 713.9693, 1], [132.0001, 713.9693, 132.0001, 654.2192, 1], [132.0001, 654.2192, 130.5001, 649.2192, 1], [130.5001, 649.2192, 130.5001, 587.2192, 1], [130.5001, 587.2192, 130.5001, 586.2192, 1], [130.5001, 586.2192, 130.5001, 585.8213, 130.3421, 585.4398, 130.0607, 585.1585, 2], [130.0607, 585.1585, 129.7794, 584.8772, 129.3979, 584.7192, 129.0001, 584.7192, 2], [129.0001, 584.7192, 128.6023, 584.7192, 128.2207, 584.8772, 127.9394, 585.1585, 2], [127.9394, 585.1585, 127.6581, 585.4398, 127.5001, 585.8213, 127.5001, 586.2192, 2], [127.5001, 586.2192, 127.5001, 587.7191, 1], [127.5001, 587.7191, 127.5001, 665.7192, 1], [127.5001, 665.7192, 70.0, 665.7192, 1], [70.0, 665.7192, 70.0, 584.7192, 1], [70.0, 584.7192, 70.0, 193.7189, 1], [70.0, 193.7189, 127.5001, 193.7189, 1], [127.5001, 193.7189, 127.5001, 271.7189, 1], [127.5001, 271.7189, 127.5001, 273.2189, 1], [127.5001, 273.2189, 127.5001, 273.6168, 127.6581, 273.9983, 127.9394, 274.2796, 2], [127.9394, 274.2796, 128.2207, 274.5609, 128.6023, 274.7189, 129.0001, 274.7189, 2], [129.0001, 274.7189, 129.3979, 274.7189, 129.7794, 274.5609, 130.0607, 274.2796, 2], [130.0607, 274.2796, 130.3421, 273.9983, 130.5001, 273.6168, 130.5001, 273.2189, 2], [130.5001, 273.2189, 130.5001, 210.2189, 1], [130.5001, 210.2189, 132.0001, 205.2189, 1], [132.0001, 205.2189, 132.0001, 145.4688, 1], [132.0001, 145.4688, 171.5001, 145.4688, 1], [171.5001, 145.4688, 173.5001, 141.7188, 1], [173.5001, 141.7188, 209.5001, 141.7188, 1], [209.5001, 141.7188, 211.5001, 145.4688, 1], [211.5001, 145.4688, 251.5002, 145.4688, 1], [251.5002, 145.4688, 253.5002, 141.7188, 1], [253.5002, 141.7188, 289.5002, 141.7188, 1], [289.5002, 141.7188, 291.5002, 145.4688, 1], [291.5002, 145.4688, 331.0002, 145.4688, 1], [331.0002, 145.4688, 331.0002, 205.2189, 1], [331.0002, 205.2189, 332.5002, 210.2189, 1], [332.5002, 210.2189, 332.5002, 272.2189, 1], [332.5002, 272.2189, 332.5002, 272.6168, 332.6582, 272.9983, 332.9396, 273.2796, 2], [332.9396, 273.2796, 333.2209, 273.5609, 333.6024, 273.719, 334.0002, 273.719, 2], [334.0002, 273.719, 334.3981, 273.719, 334.7796, 273.5609, 335.0609, 273.2796, 2], [335.0609, 273.2796, 335.3422, 272.9983, 335.5002, 272.6168, 335.5002, 272.2189, 2], [335.5002, 272.2189, 335.5002, 270.7189, 1], [335.5002, 270.7189, 335.5002, 192.7189, 1], [335.5002, 192.7189, 393.5003, 192.7189, 1], [393.5003, 192.7189, 393.5003, 273.719, 1], [393.5003, 273.719, 393.5003, 276.2189, 1], [393.5003, 276.2189, 393.5003, 276.4842, 393.6056, 276.7385, 393.7932, 276.926, 2], [393.7932, 276.926, 393.9807, 277.1136, 394.2351, 277.219, 394.5003, 277.219, 2], [394.5003, 277.219, 394.8126, 277.219, 395.1171, 277.1215, 395.3713, 276.9401, 2], [395.3713, 276.9401, 395.6256, 276.7588, 395.8169, 276.5026, 395.9185, 276.2073, 2], [395.9185, 276.2073, 412.9187, 226.8354, 1], [412.9187, 226.8354, 413.9354, 223.8826, 415.8484, 221.3207, 418.3909, 219.5072, 2], [418.3909, 219.5072, 420.9334, 217.6937, 423.9785, 216.7189, 427.1015, 216.7189, 2], [427.1015, 216.7189, 564.4268, 216.7189, 1], [564.4268, 216.7189, 567.5051, 216.7189, 570.5088, 217.666, 573.0305, 219.4316, 2], [573.0305, 219.4316, 575.552, 221.1973, 577.4693, 223.696, 578.5222, 226.5886, 2], [578.5222, 226.5886, 596.5909, 276.232, 1], [596.5909, 276.232, 596.6962, 276.5212, 596.8879, 276.7711, 597.1401, 276.9477, 2], [597.1401, 276.9477, 597.3922, 277.1242, 597.6926, 277.219, 598.0004, 277.219, 2], [598.0004, 277.219, 598.2656, 277.219, 598.52, 277.1136, 598.7075, 276.926, 2], [598.7075, 276.926, 598.8951, 276.7385, 599.0004, 276.4842, 599.0004, 276.2189, 2], [599.0004, 276.2189, 599.0004, 273.719, 1], [599.0004, 273.719, 599.0004, 234.7189, 1], [599.0004, 234.7189, 599.0004, 231.2711, 600.3701, 227.9645, 602.808, 225.5265, 2], [602.808, 225.5265, 605.246, 223.0885, 608.5526, 221.7189, 612.0005, 221.7189, 2], [612.0005, 221.7189, 624.0678, 221.7189, 635.6409, 227.1975, 644.1738, 236.9494, 2], [644.1738, 236.9494, 652.7067, 246.7012, 657.5005, 259.9277, 657.5005, 273.719, 2]], [[174.0001, 272.2189, 173.3371, 272.2189, 172.7012, 272.4823, 172.2323, 272.9512, 2], [172.2323, 272.9512, 171.7635, 273.42, 171.5001, 274.0559, 171.5001, 274.7189, 2], [171.5001, 274.7189, 171.5001, 275.382, 171.7635, 276.0179, 172.2323, 276.4867, 2], [172.2323, 276.4867, 172.7012, 276.9555, 173.3371, 277.219, 174.0001, 277.219, 2], [174.0001, 277.219, 209.0001, 277.219, 1], [209.0001, 277.219, 209.6632, 277.219, 210.2991, 276.9555, 210.7679, 276.4867, 2], [210.7679, 276.4867, 211.2368, 276.0179, 211.5001, 275.382, 211.5001, 274.7189, 2], [211.5001, 274.7189, 211.5001, 274.0559, 211.2368, 273.42, 210.7679, 272.9512, 2], [210.7679, 272.9512, 210.2991, 272.4823, 209.6632, 272.2189, 209.0001, 272.2189, 2], [209.0001, 272.2189, 174.0001, 272.2189, 1]], [[174.0001, 587.2192, 173.3371, 587.2192, 172.7012, 586.9558, 172.2323, 586.4869, 2], [172.2323, 586.4869, 171.7635, 586.0181, 171.5001, 585.3822, 171.5001, 584.7192, 2], [171.5001, 584.7192, 171.5001, 584.0561, 171.7635, 583.4202, 172.2323, 582.9514, 2], [172.2323, 582.9514, 172.7012, 582.4826, 173.3371, 582.2191, 174.0001, 582.2191, 2], [174.0001, 582.2191, 209.0001, 582.2191, 1], [209.0001, 582.2191, 209.6632, 582.2191, 210.2991, 582.4826, 210.7679, 582.9514, 2], [210.7679, 582.9514, 211.2368, 583.4202, 211.5001, 584.0561, 211.5001, 584.7192, 2], [211.5001, 584.7192, 211.5001, 585.3822, 211.2368, 586.0181, 210.7679, 586.4869, 2], [210.7679, 586.4869, 210.2991, 586.9558, 209.6632, 587.2192, 209.0001, 587.2192, 2], [209.0001, 587.2192, 174.0001, 587.2192, 1]], [[254.0002, 272.2189, 253.3372, 272.2189, 252.7013, 272.4823, 252.2324, 272.9512, 2], [252.2324, 272.9512, 251.7636, 273.42, 251.5002, 274.0559, 251.5002, 274.7189, 2], [251.5002, 274.7189, 251.5002, 275.382, 251.7636, 276.0179, 252.2324, 276.4867, 2], [252.2324, 276.4867, 252.7013, 276.9555, 253.3372, 277.219, 254.0002, 277.219, 2], [254.0002, 277.219, 289.0002, 277.219, 1], [289.0002, 277.219, 289.6633, 277.219, 290.2991, 276.9555, 290.768, 276.4867, 2], [290.768, 276.4867, 291.2368, 276.0179, 291.5002, 275.382, 291.5002, 274.7189, 2], [291.5002, 274.7189, 291.5002, 274.0559, 291.2368, 273.42, 290.768, 272.9512, 2], [290.768, 272.9512, 290.2991, 272.4823, 289.6633, 272.2189, 289.0002, 272.2189, 2], [289.0002, 272.2189, 254.0002, 272.2189, 1]], [[254.0002, 587.2192, 253.3372, 587.2192, 252.7013, 586.9558, 252.2324, 586.4869, 2], [252.2324, 586.4869, 251.7636, 586.0181, 251.5002, 585.3822, 251.5002, 584.7192, 2], [251.5002, 584.7192, 251.5002, 584.0561, 251.7636, 583.4202, 252.2324, 582.9514, 2], [252.2324, 582.9514, 252.7013, 582.4826, 253.3372, 582.2191, 254.0002, 582.2191, 2], [254.0002, 582.2191, 289.0002, 582.2191, 1], [289.0002, 582.2191, 289.6633, 582.2191, 290.2991, 582.4826, 290.768, 582.9514, 2], [290.768, 582.9514, 291.2368, 583.4202, 291.5002, 584.0561, 291.5002, 584.7192, 2], [291.5002, 584.7192, 291.5002, 585.3822, 291.2368, 586.0181, 290.768, 586.4869, 2], [290.768, 586.4869, 290.2991, 586.9558, 289.6633, 587.2192, 289.0002, 587.2192, 2], [289.0002, 587.2192, 254.0002, 587.2192, 1]]];
+const CRE0427 = [[[394.5003, 277.219, 598.0004, 277.219, 1]], [[598.0004, 277.219, 598.0004, 582.2191, 1]], [[598.0004, 582.2191, 394.5003, 582.2191, 1]], [[394.5003, 582.2191, 394.5003, 277.219, 1]], [[599.0004, 273.719, 657.5005, 273.719, 1]], [[657.5005, 585.7191, 599.0004, 585.7191, 1]], [[334.0002, 273.719, 393.5003, 273.719, 1]], [[393.5003, 585.7191, 334.0002, 585.7191, 1]], [[332.5002, 587.2192, 332.5002, 272.2189, 1]], [[129.0001, 584.7192, 70.0, 584.7192, 1]], [[70.0, 274.7189, 129.0001, 274.7189, 1]], [[130.5001, 273.2189, 130.5001, 586.2192, 1]], [[130.5001, 272.2189, 174.0001, 272.2189, 1]], [[209.0001, 272.2189, 254.0002, 272.2189, 1]], [[289.0002, 272.2189, 332.5002, 272.2189, 1]], [[332.5002, 587.2192, 289.0002, 587.2192, 1]], [[254.0002, 587.2192, 209.0001, 587.2192, 1]], [[174.0001, 587.2192, 130.5001, 587.2192, 1]], [[130.5001, 210.2189, 332.5002, 210.2189, 1]], [[332.5002, 649.2192, 130.5001, 649.2192, 1]], [[132.0001, 205.2189, 331.0002, 205.2189, 1]], [[331.0002, 654.2192, 132.0001, 654.2192, 1]]];
+function fefcoInterp(v, src, dst) {
+  if (v <= src[0]) return dst[0];
+  if (v >= src[src.length - 1]) return dst[dst.length - 1];
+  for (let i = 0; i < src.length - 1; i++) {
+    if (v >= src[i] - 0.001 && v <= src[i + 1] + 0.001) {
+      const t = src[i + 1] > src[i] ? (v - src[i]) / (src[i + 1] - src[i]) : 0;
+      return dst[i] + t * (dst[i + 1] - dst[i]);
+    }
+  }
+  return dst[dst.length - 1];
+}
+function cartonNapGai({
+  L: l,
+  W: w,
+  H: h
+}) {
+  const P = [],
+    OX = 70,
+    OY = 141.719,
+    L0 = 315,
+    W0 = 202,
+    H0 = 62;
+  const bxR = [0, H0 - 4.5, H0 - 1.5, H0, H0 + W0 - 3, H0 + W0 - 1.5, H0 + W0 + 1.5, 2 * H0 + W0 - 2.5, 2 * H0 + W0 - 1.5, 2 * H0 + 2 * W0, 2 * H0 + 2 * W0 + 1, 3 * H0 + 2 * W0 - 2.5, 3 * H0 + 2 * W0];
+  const bxN = [0, h - 4.5, h - 1.5, h, h + w - 3, h + w - 1.5, h + w + 1.5, 2 * h + w - 2.5, 2 * h + w - 1.5, 2 * h + 2 * w, 2 * h + 2 * w + 1, 3 * h + 2 * w - 2.5, 3 * h + 2 * w];
+  const byR = [0, 3.75, H0 - 11, H0 + 1.5, H0 + 6.5, 2 * H0 + 6.5, 2 * H0 + 8, L0 + 2 * H0 + 5, L0 + 2 * H0 + 6.5, L0 + 3 * H0 + 6.5, L0 + 3 * H0 + 11.5, L0 + 4 * H0 + 9.25, L0 + 4 * H0 + 13];
+  const byN = [0, 3.75, h - 11, h + 1.5, h + 6.5, 2 * h + 6.5, 2 * h + 8, l + 2 * h + 5, l + 2 * h + 6.5, l + 3 * h + 6.5, l + 3 * h + 11.5, l + 4 * h + 9.25, l + 4 * h + 13];
+  const tH = byN[byN.length - 1];
+  const tx = xf => fefcoInterp(xf - OX, bxR, bxN),
+    ty = yf => fefcoInterp(yf - OY, byR, byN);
+  function proc(segs) {
+    const pts = [];
+    for (const s of segs) {
+      const tp = s[s.length - 1],
+        x1 = tx(s[0]),
+        y1 = ty(s[1]);
+      if (tp === 1) {
+        const x2 = tx(s[2]),
+          y2 = ty(s[3]);
+        if (!pts.length) pts.push([x1, tH - y1]);
+        pts.push([x2, tH - y2]);
+      } else {
+        const cx1 = tx(s[2]),
+          cy1 = ty(s[3]),
+          cx2 = tx(s[4]),
+          cy2 = ty(s[5]),
+          x2 = tx(s[6]),
+          y2 = ty(s[7]);
+        if (!pts.length) pts.push([x1, tH - y1]);
+        for (let i = 1; i <= 8; i++) {
+          const t = i / 8,
+            s2 = 1 - t;
+          pts.push([s2 ** 3 * x1 + 3 * s2 ** 2 * t * cx1 + 3 * s2 * t ** 2 * cx2 + t ** 3 * x2, tH - (s2 ** 3 * y1 + 3 * s2 ** 2 * t * cy1 + 3 * s2 * t ** 2 * cy2 + t ** 3 * y2)]);
+        }
+      }
+    }
+    return pts;
+  }
+  for (const sp of CUT0427) {
+    const pts = proc(sp);
+    if (pts.length) P.push(new Path(pts, 'cut'));
+  }
+  for (const sp of CRE0427) {
+    const pts = proc(sp);
+    if (pts.length) P.push(new Path(pts, 'crease'));
+  }
+  return P;
+}
+/* Bao lì xì — 2 mặt chính + tay dán hông/đáy + nắp */
+function lixiNhon({
+  L: w,
+  W: h,
+  eFlap: lidH,
+  eBot: tabBot,
+  eGlue: tabSide
+}) {
+  const P = [],
+    t = 3;
+  const C = a => P.push(new Path(a, 'crease')),
+    U = a => P.push(new Path(a, 'cut'));
+  U([[-(tabSide - t), h], [0, h], [w / 2, h + lidH], [w, h], [2 * w, h], [2 * w, 0], [w, 0], [w, -(tabBot - t)], [w - t, -tabBot], [t, -tabBot], [0, -(tabBot - t)], [0, 0], [-(tabSide - t), 0], [-tabSide, t], [-tabSide, h - t], [-(tabSide - t), h]]);
+  C([[0, 0], [0, h]]);
+  C([[w, 0], [w, h]]);
+  C([[0, h], [w, h]]);
+  C([[0, 0], [w, 0]]);
+  return P;
+}
+function lixiTron({
+  L: w,
+  W: h,
+  eFlap: lidH,
+  eBot: tabBot,
+  eGlue: tabSide
+}) {
+  const P = [],
+    t = 3,
+    N = 32;
+  const C = a => P.push(new Path(a, 'crease')),
+    U = a => P.push(new Path(a, 'cut'));
+  const pts = [[-(tabSide - t), h]];
+  for (let i = 0; i <= N; i++) {
+    const a = Math.PI * i / N;
+    pts.push([w / 2 - w / 2 * Math.cos(a), h + lidH * Math.sin(a)]);
+  }
+  pts.push([2 * w, h], [2 * w, 0], [w, 0], [w, -(tabBot - t)], [w - t, -tabBot], [t, -tabBot], [0, -(tabBot - t)], [0, 0]);
+  pts.push([-(tabSide - t), 0], [-tabSide, t], [-tabSide, h - t], [-(tabSide - t), h]);
+  U(pts);
+  C([[0, 0], [0, h]]);
+  C([[w, 0], [w, h]]);
+  C([[0, h], [w, h]]);
+  C([[0, 0], [w, 0]]);
+  return P;
+}
+const BOXES = {
+  _hdr1: {
+    name: "── Hộp ──",
+    hdr: true
+  },
+  naptd: {
+    name: "Nắp T/D cùng chiều",
+    fn: napTrenDuoi,
+    cat: 'box',
+    dust: true
+  },
+  naptren: {
+    name: "Nắp trên (đáy dán)",
+    fn: napTren,
+    cat: 'box'
+  },
+  daygai: {
+    name: "Đáy gài (auto-lock)",
+    fn: dayGai,
+    cat: 'box'
+  },
+  thang: {
+    name: "Hộp thẳng",
+    fn: hopThang,
+    cat: 'box'
+  },
+  duoidinh: {
+    name: "Đáy cài đỉnh",
+    fn: duoiCungDinh,
+    cat: 'box'
+  },
+  treotai: {
+    name: "Hộp treo tai",
+    fn: treoTai,
+    cat: 'box'
+  },
+  carton: {
+    name: "Thùng carton",
+    fn: carton,
+    cat: 'box'
+  },
+  carton0427: {
+    name: "Carton nắp gài (0427)",
+    fn: cartonNapGai,
+    cat: 'box'
+  },
+  _hdr2: {
+    name: "── Túi giấy ──",
+    hdr: true
+  },
+  tui2m: {
+    name: "Túi 2 mảnh",
+    fn: tuiGiay2Manh,
+    cat: 'bag'
+  },
+  tui1m: {
+    name: "Túi 1 mảnh",
+    fn: tuiGiay1Manh,
+    cat: 'bag'
+  },
+  tuixoan: {
+    name: "Túi quai xoắn",
+    fn: tuiQuaiXoan,
+    cat: 'bag'
+  },
+  _hdr3: {
+    name: "── Tem nhãn ──",
+    hdr: true
+  },
+  tem_tron: {
+    name: "Tem tròn",
+    fn: temTron,
+    cat: 'label'
+  },
+  tem_vuong: {
+    name: "Tem vuông",
+    fn: temVuong,
+    cat: 'label'
+  },
+  tem_cn: {
+    name: "Tem chữ nhật",
+    fn: temCN,
+    cat: 'label'
+  },
+  tem_elip: {
+    name: "Tem elip",
+    fn: temElip,
+    cat: 'label'
+  },
+  _hdr4: {
+    name: "── Thẻ treo ──",
+    hdr: true
+  },
+  hangtag: {
+    name: "Thẻ treo đơn",
+    fn: hangTag,
+    cat: 'tag'
+  },
+  hangtag2: {
+    name: "Thẻ treo gấp đôi",
+    fn: hangTagFold,
+    cat: 'tag'
+  },
+  _hdr5: {
+    name: "── Bao lì xì ──",
+    hdr: true
+  },
+  lixi_p: {
+    name: "Lì xì nắp nhọn",
+    fn: lixiNhon,
+    cat: 'env'
+  },
+  lixi_r: {
+    name: "Lì xì nắp tròn",
+    fn: lixiTron,
+    cat: 'env'
+  }
+};
+
+/* helpers */
+function bboxOf(P, pad = 4) {
+  let x0 = 1e9,
+    y0 = 1e9,
+    x1 = -1e9,
+    y1 = -1e9;
+  P.forEach(pa => pa.pts.forEach(([x, y]) => {
+    x0 = Math.min(x0, x);
+    y0 = Math.min(y0, y);
+    x1 = Math.max(x1, x);
+    y1 = Math.max(y1, y);
+  }));
+  return {
+    x: x0 - pad,
+    y: y0 - pad,
+    w: x1 - x0 + 2 * pad,
+    h: y1 - y0 + 2 * pad,
+    tw: x1 - x0,
+    th: y1 - y0
+  };
+}
+const flipY = (bb, y) => bb.y + bb.h - (y - bb.y);
+const dPath = (pa, bb) => pa.pts.map(([x, y], i) => `${i ? 'L' : 'M'}${x.toFixed(2)} ${flipY(bb, y).toFixed(2)}`).join(' ');
+const cutsD = (P, bb) => P.filter(p => p.kind === 'cut').map(p => dPath(p, bb)).join(' ');
+const creasesD = (P, bb) => P.filter(p => p.kind === 'crease').map(p => dPath(p, bb)).join(' ');
+
+/* ===== Profile-based min step calculation (scanline) ===== */
+function getProfile(paths, axis, res = 3) {
+  const allp = paths.flatMap(pa => pa.pts);
+  const xmin = Math.min(...allp.map(p => p[0])),
+    xmax = Math.max(...allp.map(p => p[0]));
+  const ymin = Math.min(...allp.map(p => p[1])),
+    ymax = Math.max(...allp.map(p => p[1]));
+  const isY = axis === 'y';
+  const lo0 = isY ? xmin : ymin,
+    hi0 = isY ? xmax : ymax;
+  const n = Math.ceil((hi0 - lo0) / res) + 1;
+  const prof = new Map();
+  for (const pa of paths) {
+    if (pa.kind !== 'cut') continue;
+    for (let j = 0; j < pa.pts.length - 1; j++) {
+      const [x1, y1] = pa.pts[j],
+        [x2, y2] = pa.pts[j + 1];
+      const len = Math.hypot(x2 - x1, y2 - y1);
+      const st = Math.max(1, Math.ceil(len / (res * 0.5)));
+      for (let s = 0; s <= st; s++) {
+        const t = s / st,
+          x = x1 + (x2 - x1) * t,
+          y = y1 + (y2 - y1) * t;
+        const ci = Math.max(0, Math.min(Math.floor(((isY ? x : y) - lo0) / res), n - 1));
+        const val = isY ? y : x;
+        const cur = prof.get(ci);
+        if (cur) {
+          cur[0] = Math.min(cur[0], val);
+          cur[1] = Math.max(cur[1], val);
+        } else prof.set(ci, [val, val]);
+      }
+    }
+  }
+  return {
+    prof,
+    lo0,
+    hi0,
+    n,
+    res,
+    xmin,
+    xmax,
+    ymin,
+    ymax
+  };
+}
+function minStep180(paths, axis = 'y') {
+  const {
+    prof,
+    lo0,
+    hi0,
+    n,
+    res,
+    xmin,
+    xmax,
+    ymin,
+    ymax
+  } = getProfile(paths, axis);
+  const isY = axis === 'y';
+  const ctr = isY ? (ymin + ymax) / 2 : (xmin + xmax) / 2;
+  const ctr2 = isY ? (xmin + xmax) / 2 : (ymin + ymax) / 2;
+  const span = isY ? ymax - ymin : xmax - xmin;
+  let ms = 0;
+  for (const [ci, ext] of prof) {
+    const pos = lo0 + ci * res;
+    const posMir = 2 * ctr2 - pos;
+    const ciMir = Math.max(0, Math.min(Math.floor((posMir - lo0) / res), n - 1));
+    const extMir = prof.get(ciMir);
+    if (extMir) {
+      ms = Math.max(ms, ext[1] + extMir[1] - 2 * ctr);
+    }
+  }
+  return {
+    minStep: Math.ceil(ms),
+    bboxSpan: Math.ceil(span),
+    minPct: Math.ceil(ms / span * 100)
+  };
+}
+const PAPERS = [{
+  name: "65×90",
+  w: 650,
+  h: 900
+}, {
+  name: "79×109",
+  w: 790,
+  h: 1090
+}, {
+  name: "72×102",
+  w: 720,
+  h: 1020
+}, {
+  name: "64×90",
+  w: 640,
+  h: 900
+}, {
+  name: "58×88",
+  w: 580,
+  h: 880
+}, {
+  name: "43×65",
+  w: 430,
+  h: 650
+}];
+function calcImp(dw, dh, pw, ph, gap, grip) {
+  const aw = pw - grip;
+  const tryL = (a, b) => Math.floor((aw + gap) / (a + gap)) * Math.floor((ph + gap) / (b + gap));
+  const n = tryL(dw, dh),
+    r = tryL(dh, dw),
+    rot = r > n;
+  const cols = Math.floor((aw + gap) / ((rot ? dh : dw) + gap)),
+    rows = Math.floor((ph + gap) / ((rot ? dw : dh) + gap)),
+    cnt = cols * rows;
+  return {
+    cols,
+    rows,
+    count: cnt,
+    rotated: rot,
+    cw: rot ? dh : dw,
+    ch: rot ? dw : dh
+  };
+}
+
+/* Hex packing for labels (brick-offset rows) */
+function calcHex(dw, dh, pw, ph, gapH, gapV, grip) {
+  const mL = grip,
+    mR = 5,
+    mT = 5,
+    mB = 5;
+  const px = dw + gapH,
+    py = dh + gapV;
+  const items = [];
+  let row = 0,
+    y = mT + dh / 2;
+  while (y + dh / 2 <= ph - mB + 0.01) {
+    const off = row % 2 === 1 ? px / 2 : 0;
+    let x = mL + dw / 2 + off;
+    while (x + dw / 2 <= pw - mR + 0.01) {
+      items.push({
+        cx: x,
+        cy: y,
+        rx: dw / 2,
+        ry: dh / 2,
+        rot: 0
+      });
+      x += px;
+    }
+    y += py;
+    row++;
+  }
+  return {
+    count: items.length,
+    items
+  };
+}
+
+/* exporters */
+function toSVG(P, bb) {
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${bb.x} ${bb.y} ${bb.w} ${bb.h}" width="${bb.w}mm" height="${bb.h}mm"><path d="${cutsD(P, bb)}" fill="none" stroke="#1d4ed8" stroke-width="0.5" stroke-linejoin="round"/><path d="${creasesD(P, bb)}" fill="none" stroke="#dc2626" stroke-width="0.4" stroke-dasharray="3,2"/></svg>`;
+}
+function toDXF(P) {
+  let e = '';
+  P.forEach(pa => {
+    const [ly, cl] = pa.kind === 'cut' ? ['CUT', 5] : ['CREASE', 1];
+    for (let i = 0; i < pa.pts.length - 1; i++) {
+      const [ax, ay] = pa.pts[i],
+        [bx, by] = pa.pts[i + 1];
+      e += `0\nLINE\n8\n${ly}\n62\n${cl}\n10\n${ax}\n20\n${ay}\n11\n${bx}\n21\n${by}\n`;
+    }
+  });
+  return "0\nSECTION\n2\nTABLES\n0\nTABLE\n2\nLAYER\n0\nLAYER\n2\nCUT\n70\n0\n62\n5\n6\nCONTINUOUS\n0\nLAYER\n2\nCREASE\n70\n0\n62\n1\n6\nDASHED\n0\nENDTAB\n0\nENDSEC\n0\nSECTION\n2\nENTITIES\n" + e + "0\nENDSEC\n0\nEOF\n";
+}
+function dl(n, t, tp) {
+  const b = new Blob([t], {
+      type: tp
+    }),
+    u = URL.createObjectURL(b),
+    a = document.createElement('a');
+  a.href = u;
+  a.download = n;
+  a.click();
+  URL.revokeObjectURL(u);
+}
+
+/* PDF 1:1 — raw PDF generator (no library) */
+const F = v => v.toFixed(2);
+function rawPDF(pwMm, phMm, stream) {
+  const S = 72 / 25.4,
+    pw = F(pwMm * S),
+    ph = F(phMm * S);
+  const objs = ['1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n', '2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n', `3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${pw} ${ph}] /Contents 4 0 R >>\nendobj\n`, `4 0 obj\n<< /Length ${stream.length} >>\nstream\n${stream}endstream\nendobj\n`];
+  let pdf = '%PDF-1.4\n';
+  const offs = [];
+  objs.forEach(o => {
+    offs.push(pdf.length);
+    pdf += o;
+  });
+  const xp = pdf.length;
+  pdf += `xref\n0 5\n0000000000 65535 f \n`;
+  offs.forEach(o => pdf += `${o.toString().padStart(10, '0')} 00000 n \n`);
+  pdf += `trailer\n<< /Size 5 /Root 1 0 R >>\nstartxref\n${xp}\n%%EOF`;
+  return pdf;
+}
+function diePDF(P, bb) {
+  const S = 72 / 25.4,
+    mg = 5,
+    pw = bb.w + 2 * mg,
+    ph = bb.h + 2 * mg;
+  let s = '';
+  for (const p of P) {
+    s += p.kind === 'cut' ? '0.11 0.31 0.85 RG\n0.5 w\n[] 0 d\n' : '0.86 0.15 0.15 RG\n0.4 w\n[3 2] 0 d\n';
+    for (let i = 0; i < p.pts.length; i++) {
+      const x = (p.pts[i][0] - bb.x + mg) * S,
+        y = (p.pts[i][1] - bb.y + mg) * S;
+      s += `${F(x)} ${F(y)} ${i === 0 ? 'm' : 'l'}\n`;
+    }
+    s += 'S\n';
+  }
+  return rawPDF(pw, ph, s);
+}
+function impPDF(P, bb, pW, pH, imp, gap, grip) {
+  const S = 72 / 25.4,
+    pad = 4,
+    dX = bb.x + pad,
+    dY = bb.y + pad,
+    tw = bb.tw,
+    th = bb.th;
+  let s = '';
+  s += '0.7 0.7 0.7 RG\n0.5 w\n[] 0 d\n';
+  s += `0 0 ${F(pW * S)} ${F(pH * S)} re S\n`;
+  if (grip > 0) {
+    s += '1 0.92 0.92 rg\n';
+    s += `0 0 ${F(grip * S)} ${F(pH * S)} re f\n`;
+  }
+  for (let idx = 0; idx < imp.count; idx++) {
+    const c = idx % imp.cols,
+      r = Math.floor(idx / imp.cols);
+    const ox = grip + c * (imp.cw + gap),
+      oy = r * (imp.ch + gap);
+    for (const p of P) {
+      s += p.kind === 'cut' ? '0.11 0.31 0.85 RG\n0.35 w\n[] 0 d\n' : '0.86 0.15 0.15 RG\n0.25 w\n[2 1.5] 0 d\n';
+      for (let i = 0; i < p.pts.length; i++) {
+        const rx = p.pts[i][0] - dX,
+          ry = p.pts[i][1] - dY;
+        let px, py;
+        if (imp.rotated) {
+          px = (ox + ry) * S;
+          py = (pH - oy - rx) * S;
+        } else {
+          px = (ox + rx) * S;
+          py = (pH - oy - th + ry) * S;
+        }
+        s += `${F(px)} ${F(py)} ${i === 0 ? 'm' : 'l'}\n`;
+      }
+      s += 'S\n';
+    }
+  }
+  return rawPDF(pW, pH, s);
+}
+const NF = ({
+  label,
+  value,
+  set,
+  min = 0,
+  max = 3000,
+  step = 1
+}) => /*#__PURE__*/React.createElement("label", {
+  className: "flex flex-col gap-1"
+}, /*#__PURE__*/React.createElement("span", {
+  className: "text-[10px] uppercase tracking-wider text-zinc-400 font-mono"
+}, label), /*#__PURE__*/React.createElement("input", {
+  type: "number",
+  value: value,
+  min: min,
+  max: max,
+  step: step,
+  onChange: e => set(Math.max(min, Math.min(max, Number(e.target.value) || 0))),
+  className: "bg-zinc-900 border border-zinc-700 rounded px-2 py-1.5 text-sm font-mono text-zinc-100 focus:border-blue-500 focus:outline-none"
+}));
+function DielineTool() {
+  const [tab, setTab] = useState("die");
+  const [type, setType] = useState("naptd");
+  const [ddOpen, setDd] = useState(false);
+  const [L, setL] = useState(120);
+  const [W, setW] = useState(60);
+  const [H, setH] = useState(160);
+  const [p, setP] = useState(0.5);
+  const [z, setZ] = useState(12);
+  const [sx, setSx] = useState(11);
+  const [dustAuto, setDA] = useState(true);
+  const [dustH, setDH] = useState(33);
+  const [cr, setCr] = useState(3);
+  const [holeD, setHoleD] = useState(5);
+  const [holeY, setHoleY] = useState(8);
+  const [bG, setBG] = useState(80);
+  const [bHTop, setBHTop] = useState(30);
+  const [bHBot, setBHBot] = useState(60);
+  const [bGlue, setBGlue] = useState(20);
+  const [bHR, setBHR] = useState(4);
+  const [bHOX, setBHOX] = useState(55);
+  const [bHGAP, setBHGAP] = useState(10);
+  const [eFlap, setEFlap] = useState(30);
+  const [eBot, setEBot] = useState(15);
+  const [eGlue, setEGlue] = useState(15);
+  const [zoom, setZoom] = useState(1);
+  const [grid, setGrid] = useState(true);
+  const [panX, setPanX] = useState(0);
+  const [panY, setPanY] = useState(0);
+  const panRef = useRef({
+    dragging: false,
+    sx: 0,
+    sy: 0,
+    ox: 0,
+    oy: 0
+  });
+  const onPanDown = useCallback(e => {
+    if (e.button !== 0) return;
+    const r = panRef.current;
+    r.dragging = true;
+    r.sx = e.clientX;
+    r.sy = e.clientY;
+    r.ox = panX;
+    r.oy = panY;
+    e.currentTarget.style.cursor = 'grabbing';
+  }, [panX, panY]);
+  const onPanMove = useCallback(e => {
+    const r = panRef.current;
+    if (!r.dragging) return;
+    setPanX(r.ox + e.clientX - r.sx);
+    setPanY(r.oy + e.clientY - r.sy);
+  }, []);
+  const onPanUp = useCallback(e => {
+    panRef.current.dragging = false;
+    e.currentTarget.style.cursor = 'grab';
+  }, []);
+  const onWhl = useCallback(e => {
+    e.preventDefault();
+    setZoom(v => Math.max(0.3, Math.min(5, +(v + (e.deltaY < 0 ? 0.15 : -0.15)).toFixed(2))));
+  }, []);
+  const [paperIdx, setPI] = useState(0);
+  const [cpw, setCpw] = useState(790);
+  const [cph, setCph] = useState(1090);
+  const [gap, setGap] = useState(3);
+  const [grip, setGrip] = useState(10);
+  const [gapH, setGapH] = useState(2);
+  const [gapV, setGapV] = useState(1);
+  const [qty, setQty] = useState(0);
+  const [soleMode, setSoleMode] = useState('h180');
+  const [stepPct, setStepPct] = useState(100);
+  const def = BOXES[type] || BOXES.naptd;
+  const cat = def.cat || 'box';
+  const err = cat === 'box' && (type === 'naptd' || type === 'daygai' || type === 'thang') && L <= W ? "L phải > W" : null;
+  const paths = useMemo(() => {
+    if (err || !def.fn) return null;
+    if (cat === 'bag') return def.fn({
+      W: L,
+      H,
+      G: bG,
+      HTop: bHTop,
+      HBot: bHBot,
+      Glue: bGlue,
+      HR: bHR,
+      HOX: bHOX,
+      HGAP: bHGAP
+    });
+    if (cat === 'env') return def.fn({
+      L,
+      W,
+      H,
+      eFlap,
+      eBot,
+      eGlue
+    });
+    return def.fn({
+      L,
+      W,
+      H,
+      p,
+      z,
+      sx,
+      dustH: def.dust && !dustAuto ? dustH : W,
+      cr,
+      holeD,
+      holeY
+    });
+  }, [type, L, W, H, p, z, sx, dustAuto, dustH, cr, holeD, holeY, bG, bHTop, bHBot, bGlue, bHR, bHOX, bHGAP, eFlap, eBot, eGlue, err]);
+  const bb = paths ? bboxOf(paths) : {
+    x: 0,
+    y: 0,
+    w: 1,
+    h: 1,
+    tw: 1,
+    th: 1
+  };
+  const cuts = paths ? cutsD(paths, bb) : '';
+  const cre = paths ? creasesD(paths, bb) : '';
+  const dW = Math.ceil(bb.tw),
+    dH = Math.ceil(bb.th);
+  const bbCx = bb.x + bb.w / 2,
+    bbCy = bb.y + bb.h / 2;
+  const paper = paperIdx < PAPERS.length ? PAPERS[paperIdx] : {
+    name: "Tùy chỉnh",
+    w: cpw,
+    h: cph
+  };
+  const imp = useMemo(() => calcImp(dW, dH, paper.w, paper.h, gap, grip), [dW, dH, paper.w, paper.h, gap, grip]);
+
+  // Auto-detect min safe step for both orientations
+  const soleProfile = useMemo(() => {
+    if (!paths) return {
+      nY: 100,
+      nX: 100,
+      rY: 100,
+      rX: 100
+    };
+    const nY = minStep180(paths, 'y'),
+      nX = minStep180(paths, 'x');
+    // For rotated die: Y-profile of rotated ≈ X-profile of normal (conservative)
+    return {
+      nY: nY.minPct,
+      nX: nX.minPct,
+      rY: nX.minPct,
+      rX: nY.minPct
+    };
+  }, [paths]);
+
+  // Sole: hex for labels, 180°/90° for boxes/tags
+  const isLabel = cat === 'label';
+  const sole = useMemo(() => {
+    if (isLabel) {
+      // Hex packing for circles/ellipses
+      const isRound = type === 'tem_tron' || type === 'tem_elip';
+      const lw = type === 'tem_tron' ? L : L,
+        lh = type === 'tem_tron' ? L : type === 'tem_vuong' ? L : W;
+      const r1 = calcHex(lw, lh, paper.w, paper.h, gapH, gapV, grip);
+      const r2 = calcHex(lh, lw, paper.w, paper.h, gapH, gapV, grip);
+      return r1.count >= r2.count ? {
+        ...r1,
+        isHex: true,
+        rotBase: false,
+        lw,
+        lh
+      } : {
+        ...r2,
+        isHex: true,
+        rotBase: true,
+        lw: lh,
+        lh: lw
+      };
+    }
+    const aw = paper.w - grip;
+    const tryH180 = (cw, ch, minP, rotBase) => {
+      const pct = Math.max(stepPct, minP);
+      const step = Math.round(ch * pct / 100);
+      const cols = Math.floor((aw + gap) / (cw + gap)),
+        rows = Math.floor((paper.h + gap) / (step + gap));
+      const items = [];
+      for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) items.push({
+        x: grip + c * (cw + gap),
+        y: r * (step + gap),
+        w: cw,
+        h: ch,
+        rot: r % 2 ? 180 : 0,
+        rotBase
+      });
+      return {
+        count: items.length,
+        items,
+        pct,
+        minP,
+        rotBase,
+        label: `180°h${rotBase ? ' ⟳' : ''}`,
+        step
+      };
+    };
+    const tryV180 = (cw, ch, minP, rotBase) => {
+      const pct = Math.max(stepPct, minP);
+      const step = Math.round(cw * pct / 100);
+      const cols = Math.floor((aw + gap) / (step + gap)),
+        rows = Math.floor((paper.h + gap) / (ch + gap));
+      const items = [];
+      for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) items.push({
+        x: grip + c * (step + gap),
+        y: r * (ch + gap),
+        w: cw,
+        h: ch,
+        rot: c % 2 ? 180 : 0,
+        rotBase
+      });
+      return {
+        count: items.length,
+        items,
+        pct,
+        minP,
+        rotBase,
+        label: `180°v${rotBase ? ' ⟳' : ''}`,
+        step
+      };
+    };
+    const tryR90 = (cw, ch) => {
+      const pW = cw + gap + ch;
+      const pairs = Math.floor((aw + gap) / (pW + gap));
+      const rN = Math.floor((paper.h + gap) / (ch + gap)),
+        rR = Math.floor((paper.h + gap) / (cw + gap));
+      const items = [];
+      let cx = grip;
+      for (let i = 0; i < pairs; i++) {
+        for (let r = 0; r < rN; r++) items.push({
+          x: cx,
+          y: r * (ch + gap),
+          w: cw,
+          h: ch,
+          rot: 0,
+          rotBase: false
+        });
+        cx += cw + gap;
+        for (let r = 0; r < rR; r++) items.push({
+          x: cx,
+          y: r * (cw + gap),
+          w: ch,
+          h: cw,
+          rot: 90,
+          rotBase: false
+        });
+        cx += ch + gap;
+      }
+      if (cx + cw <= paper.w) for (let r = 0; r < rN; r++) items.push({
+        x: cx,
+        y: r * (ch + gap),
+        w: cw,
+        h: ch,
+        rot: 0,
+        rotBase: false
+      });
+      return {
+        count: items.length,
+        items,
+        pct: 100,
+        minP: 100,
+        rotBase: false,
+        label: '90°'
+      };
+    };
+    let results = [];
+    if (soleMode === 'h180') {
+      results.push(tryH180(dW, dH, soleProfile.nY, false));
+      results.push(tryH180(dH, dW, soleProfile.rY, true));
+    } else if (soleMode === 'v180') {
+      results.push(tryV180(dW, dH, soleProfile.nX, false));
+      results.push(tryV180(dH, dW, soleProfile.rX, true));
+    } else {
+      results.push(tryR90(dW, dH));
+      results.push(tryR90(dH, dW)); // try swapped
+    }
+    results.sort((a, b) => b.count - a.count);
+    return results[0];
+  }, [dW, dH, paper.w, paper.h, gap, grip, stepPct, soleMode, soleProfile, isLabel, type, L, W, gapH, gapV]);
+  const saving = sole.count - imp.count;
+  const minPct = sole.minP;
+  const clampedPct = sole.pct;
+  const soleYield = Math.min(100, sole.count * dW * dH / (paper.w * paper.h) * 100).toFixed(1);
+  const impYield = Math.min(100, imp.count * dW * dH / (paper.w * paper.h) * 100).toFixed(1);
+  const PaperSelect = () => /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("span", {
+    className: "text-[10px] uppercase tracking-wider text-zinc-400 font-mono"
+  }, "Kh\u1ED5 gi\u1EA5y"), /*#__PURE__*/React.createElement("select", {
+    value: paperIdx,
+    onChange: e => setPI(Number(e.target.value)),
+    className: "mt-1 w-full px-2 py-1.5 rounded border border-zinc-700 bg-zinc-900 text-xs focus:border-blue-500 focus:outline-none"
+  }, PAPERS.map((pp, i) => /*#__PURE__*/React.createElement("option", {
+    key: i,
+    value: i
+  }, pp.name)), /*#__PURE__*/React.createElement("option", {
+    value: PAPERS.length
+  }, "T\xF9y ch\u1EC9nh"))), paperIdx >= PAPERS.length && /*#__PURE__*/React.createElement("div", {
+    className: "grid grid-cols-2 gap-2"
+  }, /*#__PURE__*/React.createElement(NF, {
+    label: "Ngang",
+    value: cpw,
+    set: setCpw
+  }), /*#__PURE__*/React.createElement(NF, {
+    label: "D\u1ECDc",
+    value: cph,
+    set: setCph
+  })), /*#__PURE__*/React.createElement("div", {
+    className: "grid grid-cols-2 gap-2"
+  }, /*#__PURE__*/React.createElement(NF, {
+    label: "Khe h\u1EDF",
+    value: gap,
+    set: setGap,
+    min: 0,
+    max: 20
+  }), /*#__PURE__*/React.createElement(NF, {
+    label: "M\xE9p k\u1EB9p",
+    value: grip,
+    set: setGrip,
+    min: 0,
+    max: 30
+  })));
+  const DieShapeDef = () => /*#__PURE__*/React.createElement("defs", null, /*#__PURE__*/React.createElement("g", {
+    id: "ds"
+  }, /*#__PURE__*/React.createElement("path", {
+    d: cuts,
+    fill: "none",
+    stroke: "#60a5fa",
+    strokeWidth: "1.2",
+    strokeLinejoin: "round",
+    opacity: "0.85"
+  }), /*#__PURE__*/React.createElement("path", {
+    d: cre,
+    fill: "none",
+    stroke: "#f87171",
+    strokeWidth: "0.8",
+    strokeDasharray: "4,3",
+    opacity: "0.4"
+  })));
+  const tform = it => {
+    const totalRot = (it.rot || 0) + (it.rotBase ? 90 : 0);
+    const cx = it.x + it.w / 2,
+      cy = it.y + it.h / 2;
+    if (totalRot === 0) return `translate(${cx - bbCx},${cy - bbCy})`;
+    return `translate(${cx},${cy}) rotate(${totalRot}) translate(${-bbCx},${-bbCy})`;
+  };
+  return /*#__PURE__*/React.createElement("div", {
+    className: "w-full bg-zinc-950 text-zinc-100 font-sans rounded-xl overflow-hidden border border-zinc-800"
+  }, /*#__PURE__*/React.createElement("div", {
+    className: "flex items-center justify-between px-4 py-2.5 border-b border-zinc-800 bg-zinc-900/60"
+  }, /*#__PURE__*/React.createElement("div", {
+    className: "flex items-center gap-3"
+  }, /*#__PURE__*/React.createElement(Square, {
+    className: "w-4 h-4 text-blue-500"
+  }), /*#__PURE__*/React.createElement("span", {
+    className: "font-mono text-sm tracking-tight"
+  }, "DIELINE TOOL"), /*#__PURE__*/React.createElement("div", {
+    className: "flex ml-2 rounded overflow-hidden border border-zinc-700 text-xs"
+  }, [["die", "Khuôn"], ["imp", "Bình bài"], ["sole", "Sole"]].map(([k, lb]) => /*#__PURE__*/React.createElement("button", {
+    key: k,
+    onClick: () => {
+      setTab(k);
+      setZoom(1);
+      setPanX(0);
+      setPanY(0);
+    },
+    className: `px-3 py-1 ${tab === k ? "bg-blue-600 text-white" : "bg-zinc-900 text-zinc-400 hover:text-zinc-200"}`
+  }, lb)))), /*#__PURE__*/React.createElement("span", {
+    className: "font-mono text-[11px] text-zinc-500"
+  }, dW, "\xD7", dH)), /*#__PURE__*/React.createElement("div", {
+    className: "grid md:grid-cols-[270px_1fr]",
+    style: {
+      height: 'calc(100vh - 44px)'
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    className: "p-4 space-y-3 border-r border-zinc-800 bg-zinc-900/30 text-sm overflow-y-auto"
+  }, /*#__PURE__*/React.createElement("div", {
+    className: "relative"
+  }, /*#__PURE__*/React.createElement("span", {
+    className: "text-[10px] uppercase tracking-wider text-zinc-400 font-mono"
+  }, "Lo\u1EA1i"), /*#__PURE__*/React.createElement("button", {
+    onClick: () => setDd(v => !v),
+    className: "mt-1 w-full flex items-center justify-between px-3 py-2 rounded border border-zinc-700 hover:border-zinc-500 bg-zinc-900"
+  }, /*#__PURE__*/React.createElement("span", {
+    className: "text-xs"
+  }, def.name), /*#__PURE__*/React.createElement(ChevronDown, {
+    className: `w-3.5 h-3.5 transition ${ddOpen ? "rotate-180" : ""}`
+  })), ddOpen && /*#__PURE__*/React.createElement("div", {
+    className: "absolute z-20 mt-1 w-full rounded border border-zinc-700 bg-zinc-900 shadow-xl overflow-hidden max-h-72 overflow-y-auto"
+  }, Object.entries(BOXES).map(([k, v]) => v.hdr ? /*#__PURE__*/React.createElement("div", {
+    key: k,
+    className: "px-3 py-1.5 text-[10px] text-zinc-500 font-mono bg-zinc-800/50"
+  }, v.name) : /*#__PURE__*/React.createElement("button", {
+    key: k,
+    onClick: () => {
+      setType(k);
+      setDd(false);
+      if (v.cat === 'box' && k !== 'carton0427') {
+        setL(200);
+        setW(120);
+        setH(160);
+      }
+      if (v.cat === 'label') {
+        setL(v.fn === temTron ? 50 : 40);
+        setW(v.fn === temElip ? 25 : 40);
+      }
+      if (v.cat === 'tag') {
+        setL(50);
+        setW(90);
+        setCr(5);
+        setHoleD(5);
+      }
+      if (v.cat === 'bag') {
+        setL(200);
+        setH(250);
+        setBG(80);
+      }
+      if (k === 'carton0427') {
+        setL(315);
+        setW(202);
+        setH(62);
+      }
+      if (v.cat === 'env') {
+        setL(90);
+        setW(170);
+        setEFlap(30);
+        setEBot(15);
+        setEGlue(15);
+      }
+    },
+    className: `w-full text-left px-3 py-2 text-xs hover:bg-blue-500/15 ${k === type ? "bg-blue-500/10 text-blue-300" : "text-zinc-200"}`
+  }, v.name)))), cat === 'box' && /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("div", {
+    className: "grid grid-cols-3 gap-2"
+  }, /*#__PURE__*/React.createElement(NF, {
+    label: "D\xE0i l",
+    value: L,
+    set: setL
+  }), /*#__PURE__*/React.createElement(NF, {
+    label: "R\u1ED9ng w",
+    value: W,
+    set: setW
+  }), /*#__PURE__*/React.createElement(NF, {
+    label: "Cao h",
+    value: H,
+    set: setH
+  })), /*#__PURE__*/React.createElement("div", {
+    className: "grid grid-cols-3 gap-2"
+  }, /*#__PURE__*/React.createElement(NF, {
+    label: "D\xE0y p",
+    value: p,
+    set: setP,
+    min: 0,
+    max: 6,
+    step: 0.1
+  }), /*#__PURE__*/React.createElement(NF, {
+    label: "L\u01B0\u1EE1i z",
+    value: z,
+    set: setZ,
+    min: 5,
+    max: 40
+  }), /*#__PURE__*/React.createElement(NF, {
+    label: "M\xE9p d\xE1n",
+    value: sx,
+    set: setSx,
+    min: 5,
+    max: 40
+  })), def.dust && /*#__PURE__*/React.createElement("div", {
+    className: "space-y-2"
+  }, /*#__PURE__*/React.createElement("label", {
+    className: "flex items-center gap-2 text-xs text-zinc-300"
+  }, /*#__PURE__*/React.createElement("input", {
+    type: "checkbox",
+    checked: dustAuto,
+    onChange: e => setDA(e.target.checked),
+    className: "accent-blue-500"
+  }), " Tai g\u1EA5p = w"), !dustAuto && /*#__PURE__*/React.createElement(NF, {
+    label: "Cao tai g\u1EA5p",
+    value: dustH,
+    set: setDH,
+    min: 15,
+    max: W
+  }))), cat === 'label' && /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("div", {
+    className: "grid grid-cols-2 gap-2"
+  }, /*#__PURE__*/React.createElement(NF, {
+    label: type === 'tem_tron' ? "Đường kính" : "Ngang",
+    value: L,
+    set: setL,
+    min: 5
+  }), type !== 'tem_tron' && /*#__PURE__*/React.createElement(NF, {
+    label: type === 'tem_vuong' ? "(= ngang)" : "Dọc",
+    value: type === 'tem_vuong' ? L : W,
+    set: type === 'tem_vuong' ? setL : setW,
+    min: 5
+  })), (type === 'tem_vuong' || type === 'tem_cn') && /*#__PURE__*/React.createElement(NF, {
+    label: "Bo g\xF3c (R)",
+    value: cr,
+    set: setCr,
+    min: 0,
+    max: Math.min(L, W) / 2
+  }), isLabel && /*#__PURE__*/React.createElement("div", {
+    className: "grid grid-cols-2 gap-2"
+  }, /*#__PURE__*/React.createElement(NF, {
+    label: "Gap ngang",
+    value: gapH,
+    set: setGapH,
+    min: 0,
+    max: 20
+  }), /*#__PURE__*/React.createElement(NF, {
+    label: "Gap d\u1ECDc",
+    value: gapV,
+    set: setGapV,
+    min: 0,
+    max: 20
+  }))), cat === 'tag' && /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("div", {
+    className: "grid grid-cols-2 gap-2"
+  }, /*#__PURE__*/React.createElement(NF, {
+    label: "Ngang",
+    value: L,
+    set: setL,
+    min: 10
+  }), /*#__PURE__*/React.createElement(NF, {
+    label: "D\u1ECDc",
+    value: W,
+    set: setW,
+    min: 15
+  })), /*#__PURE__*/React.createElement("div", {
+    className: "grid grid-cols-3 gap-2"
+  }, /*#__PURE__*/React.createElement(NF, {
+    label: "Bo g\xF3c",
+    value: cr,
+    set: setCr,
+    min: 0,
+    max: Math.min(L, W) / 2
+  }), /*#__PURE__*/React.createElement(NF, {
+    label: "L\u1ED7 \u2300",
+    value: holeD,
+    set: setHoleD,
+    min: 0,
+    max: 15
+  }), /*#__PURE__*/React.createElement(NF, {
+    label: "L\u1ED7 c\xE1ch m\xE9p",
+    value: holeY,
+    set: setHoleY,
+    min: 4,
+    max: W / 2
+  }))), cat === 'bag' && /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("div", {
+    className: "grid grid-cols-3 gap-2"
+  }, /*#__PURE__*/React.createElement(NF, {
+    label: "R\u1ED9ng W",
+    value: L,
+    set: setL,
+    min: 50
+  }), /*#__PURE__*/React.createElement(NF, {
+    label: "Cao H",
+    value: H,
+    set: setH,
+    min: 50
+  }), /*#__PURE__*/React.createElement(NF, {
+    label: "H\xF4ng G",
+    value: bG,
+    set: setBG,
+    min: 10
+  })), /*#__PURE__*/React.createElement("div", {
+    className: "grid grid-cols-3 gap-2"
+  }, /*#__PURE__*/React.createElement(NF, {
+    label: type === 'tuixoan' ? "—" : "Nắp trên",
+    value: bHTop,
+    set: setBHTop,
+    min: 0,
+    max: type === 'tuixoan' ? 0 : 100
+  }), /*#__PURE__*/React.createElement(NF, {
+    label: "\u0110\xE1y t\xFAi",
+    value: bHBot,
+    set: setBHBot,
+    min: 20
+  }), /*#__PURE__*/React.createElement(NF, {
+    label: "Tai d\xE1n",
+    value: bGlue,
+    set: setBGlue,
+    min: 5,
+    max: 40
+  })), type !== 'tuixoan' && /*#__PURE__*/React.createElement("div", {
+    className: "grid grid-cols-3 gap-2"
+  }, /*#__PURE__*/React.createElement(NF, {
+    label: "L\u1ED7 \u2300",
+    value: bHR,
+    set: setBHR,
+    min: 0,
+    max: 10
+  }), /*#__PURE__*/React.createElement(NF, {
+    label: "L\u1ED7 ngang",
+    value: bHOX,
+    set: setBHOX,
+    min: 10
+  }), /*#__PURE__*/React.createElement(NF, {
+    label: "L\u1ED7 d\u1ECDc",
+    value: bHGAP,
+    set: setBHGAP,
+    min: 3,
+    max: 30
+  }))), cat === 'env' && /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("div", {
+    className: "grid grid-cols-2 gap-2"
+  }, /*#__PURE__*/React.createElement(NF, {
+    label: "R\u1ED9ng",
+    value: L,
+    set: setL,
+    min: 50
+  }), /*#__PURE__*/React.createElement(NF, {
+    label: "Cao",
+    value: W,
+    set: setW,
+    min: 80
+  })), /*#__PURE__*/React.createElement("div", {
+    className: "grid grid-cols-3 gap-2"
+  }, /*#__PURE__*/React.createElement(NF, {
+    label: "N\u1EAFp",
+    value: eFlap,
+    set: setEFlap,
+    min: 10,
+    max: 80
+  }), /*#__PURE__*/React.createElement(NF, {
+    label: "Tay \u0111\xE1y",
+    value: eBot,
+    set: setEBot,
+    min: 5,
+    max: 40
+  }), /*#__PURE__*/React.createElement(NF, {
+    label: "Tay h\xF4ng",
+    value: eGlue,
+    set: setEGlue,
+    min: 10,
+    max: 80
+  }))), tab !== "die" && /*#__PURE__*/React.createElement("div", {
+    className: "border-t border-zinc-800 pt-3"
+  }, /*#__PURE__*/React.createElement(NF, {
+    label: "S\u1ED1 l\u01B0\u1EE3ng c\u1EA7n in",
+    value: qty,
+    set: setQty,
+    min: 0,
+    max: 9999999
+  })), tab === "die" && /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("div", {
+    className: "flex items-center gap-2"
+  }, /*#__PURE__*/React.createElement("button", {
+    onClick: () => setGrid(v => !v),
+    className: `flex items-center gap-1 px-2 py-1.5 rounded border text-xs ${grid ? "border-zinc-500 text-zinc-200" : "border-zinc-700 text-zinc-500"}`
+  }, /*#__PURE__*/React.createElement(Grid3x3, {
+    className: "w-3.5 h-3.5"
+  }), " L\u01B0\u1EDBi")), /*#__PURE__*/React.createElement("div", {
+    className: "space-y-2"
+  }, /*#__PURE__*/React.createElement("button", {
+    disabled: !paths,
+    onClick: () => dl(`die_${type}_${L}x${W}x${H}.svg`, toSVG(paths, bb), "image/svg+xml"),
+    className: "w-full flex items-center justify-center gap-2 px-3 py-2 rounded bg-blue-600 hover:bg-blue-500 disabled:opacity-40 text-xs font-medium"
+  }, /*#__PURE__*/React.createElement(Download, {
+    className: "w-3.5 h-3.5"
+  }), " SVG"), /*#__PURE__*/React.createElement("button", {
+    disabled: !paths,
+    onClick: () => dl(`die_${type}_${L}x${W}x${H}.dxf`, toDXF(paths), "application/dxf"),
+    className: "w-full flex items-center justify-center gap-2 px-3 py-2 rounded border border-zinc-700 hover:border-zinc-500 disabled:opacity-40 text-xs"
+  }, /*#__PURE__*/React.createElement(Download, {
+    className: "w-3.5 h-3.5"
+  }), " DXF"), /*#__PURE__*/React.createElement("button", {
+    disabled: !paths,
+    onClick: () => dl(`die_${type}_${L}x${W}x${H}.pdf`, diePDF(paths, bb), "application/pdf"),
+    className: "w-full flex items-center justify-center gap-2 px-3 py-2 rounded border border-zinc-700 hover:border-zinc-500 disabled:opacity-40 text-xs"
+  }, /*#__PURE__*/React.createElement(Download, {
+    className: "w-3.5 h-3.5"
+  }), " PDF 1:1")), /*#__PURE__*/React.createElement("div", {
+    className: "flex gap-4 pt-1 text-[11px] font-mono"
+  }, /*#__PURE__*/React.createElement("span", {
+    className: "flex items-center gap-1.5"
+  }, /*#__PURE__*/React.createElement("span", {
+    className: "w-4 h-0.5 bg-blue-700 inline-block"
+  }), " c\u1EAFt"), /*#__PURE__*/React.createElement("span", {
+    className: "flex items-center gap-1.5"
+  }, /*#__PURE__*/React.createElement("span", {
+    className: "w-4 h-0 border-t border-dashed border-red-600 inline-block"
+  }), " g\u1EA5p"))), tab === "imp" && /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("div", {
+    className: "border-t border-zinc-800 pt-3"
+  }, /*#__PURE__*/React.createElement("span", {
+    className: "text-[10px] uppercase tracking-wider text-zinc-400 font-mono flex items-center gap-1"
+  }, /*#__PURE__*/React.createElement(LayoutGrid, {
+    className: "w-3 h-3"
+  }), " B\xECnh b\xE0i th\u01B0\u1EDDng")), /*#__PURE__*/React.createElement(PaperSelect, null), /*#__PURE__*/React.createElement("div", {
+    className: "rounded border border-zinc-700 bg-zinc-900/50 p-3 space-y-1.5"
+  }, /*#__PURE__*/React.createElement("div", {
+    className: "flex justify-between text-xs"
+  }, /*#__PURE__*/React.createElement("span", {
+    className: "text-zinc-400"
+  }, "X\u1EBFp"), /*#__PURE__*/React.createElement("span", {
+    className: "font-mono"
+  }, imp.cols, "\xD7", imp.rows)), /*#__PURE__*/React.createElement("div", {
+    className: "flex justify-between text-xs font-medium"
+  }, /*#__PURE__*/React.createElement("span", {
+    className: "text-blue-400"
+  }, "S\u1ED1 con/kh\u1ED5"), /*#__PURE__*/React.createElement("span", {
+    className: "text-blue-300 font-mono text-base"
+  }, imp.count)), /*#__PURE__*/React.createElement("div", {
+    className: "flex justify-between text-xs"
+  }, /*#__PURE__*/React.createElement("span", {
+    className: "text-zinc-400"
+  }, "V\xF9ng b\xECnh"), /*#__PURE__*/React.createElement("span", {
+    className: "font-mono text-cyan-400"
+  }, imp.count > 0 ? `${(imp.cols * imp.cw + (imp.cols - 1) * gap).toFixed(0)}×${(imp.rows * imp.ch + (imp.rows - 1) * gap).toFixed(0)}` : '—', " mm")), /*#__PURE__*/React.createElement("div", {
+    className: "flex justify-between text-xs"
+  }, /*#__PURE__*/React.createElement("span", {
+    className: "text-zinc-400"
+  }, "Hi\u1EC7u su\u1EA5t"), /*#__PURE__*/React.createElement("span", {
+    className: `font-mono ${parseFloat(impYield) > 50 ? "text-emerald-400" : "text-amber-400"}`
+  }, impYield, "%")), imp.rotated && /*#__PURE__*/React.createElement("div", {
+    className: "text-[10px] text-amber-300 font-mono"
+  }, "\u27F3 Xoay 90\xB0"), /*#__PURE__*/React.createElement("div", {
+    className: "flex justify-between text-xs pt-1 border-t border-zinc-800"
+  }, /*#__PURE__*/React.createElement("span", {
+    className: "text-zinc-400"
+  }, "S\u1ED1 t\u1EDD c\u1EA7n in"), /*#__PURE__*/React.createElement("span", {
+    className: "text-emerald-400 font-mono font-medium"
+  }, imp.count > 0 ? Math.ceil(qty / imp.count) : '-'))), /*#__PURE__*/React.createElement("button", {
+    disabled: !paths || !imp.count,
+    onClick: () => dl(`imp_${type}_${paper.w}x${paper.h}.pdf`, impPDF(paths, bb, paper.w, paper.h, imp, gap, grip), "application/pdf"),
+    className: "w-full flex items-center justify-center gap-2 px-3 py-2 rounded bg-blue-600 hover:bg-blue-500 disabled:opacity-40 text-xs font-medium"
+  }, /*#__PURE__*/React.createElement(Download, {
+    className: "w-3.5 h-3.5"
+  }), " PDF 1:1 b\xECnh b\xE0i")), tab === "sole" && /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("div", {
+    className: "border-t border-zinc-800 pt-3"
+  }, /*#__PURE__*/React.createElement("span", {
+    className: "text-[10px] uppercase tracking-wider text-zinc-400 font-mono flex items-center gap-1"
+  }, /*#__PURE__*/React.createElement(RotateCw, {
+    className: "w-3 h-3"
+  }), " ", isLabel ? "Bình tem" : "Bình sole")), isLabel ? /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement(PaperSelect, null), /*#__PURE__*/React.createElement("div", {
+    className: "rounded border border-zinc-700 bg-zinc-900/50 p-3 space-y-1.5"
+  }, /*#__PURE__*/React.createElement("div", {
+    className: "flex justify-between text-xs font-medium"
+  }, /*#__PURE__*/React.createElement("span", {
+    className: "text-amber-400"
+  }, "Tem/t\u1EDD"), /*#__PURE__*/React.createElement("span", {
+    className: "text-amber-300 font-mono text-base"
+  }, sole.count)), /*#__PURE__*/React.createElement("div", {
+    className: "flex justify-between text-xs"
+  }, /*#__PURE__*/React.createElement("span", {
+    className: "text-zinc-400"
+  }, "S\u1ED1 t\u1EDD c\u1EA7n in"), /*#__PURE__*/React.createElement("span", {
+    className: "text-emerald-400 font-mono text-base"
+  }, sole.count > 0 ? Math.ceil(qty / sole.count) : '-')), /*#__PURE__*/React.createElement("div", {
+    className: "text-[10px] text-zinc-500 font-mono"
+  }, "\u0110\u1EC3 in ", qty, " tem, c\u1EA7n ", sole.count > 0 ? Math.ceil(qty / sole.count) : '-', " t\u1EDD"), sole.rotBase && /*#__PURE__*/React.createElement("div", {
+    className: "text-[10px] text-amber-300 font-mono"
+  }, "\u27F3 Xoay tem t\u1ED1i \u01B0u h\u01A1n"))) : /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement(PaperSelect, null), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("span", {
+    className: "text-[10px] uppercase tracking-wider text-zinc-400 font-mono"
+  }, "Chi\u1EBFn thu\u1EADt"), /*#__PURE__*/React.createElement("div", {
+    className: "mt-1 grid grid-cols-3 gap-1"
+  }, [['h180', '180° hàng'], ['v180', '180° cột'], ['r90', '90° cột']].map(([k, lb]) => /*#__PURE__*/React.createElement("button", {
+    key: k,
+    onClick: () => {
+      setSoleMode(k);
+      setStepPct(100);
+    },
+    className: `px-2 py-1.5 rounded border text-[11px] ${soleMode === k ? "border-amber-500 bg-amber-500/10 text-amber-300" : "border-zinc-700 text-zinc-400 hover:text-zinc-200"}`
+  }, lb)))), soleMode !== 'r90' && minPct < 100 && /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("span", {
+    className: "text-[10px] uppercase tracking-wider text-zinc-400 font-mono"
+  }, "B\u01B0\u1EDBc l\u1ED3ng: ", clampedPct, "%", sole.rotBase ? ' (die xoay 90°)' : ''), /*#__PURE__*/React.createElement("input", {
+    type: "range",
+    min: minPct,
+    max: 100,
+    step: 1,
+    value: clampedPct,
+    onChange: e => setStepPct(Number(e.target.value)),
+    className: "w-full accent-amber-500 mt-1"
+  }), /*#__PURE__*/React.createElement("div", {
+    className: "flex justify-between text-[10px] text-zinc-500 font-mono mt-0.5"
+  }, /*#__PURE__*/React.createElement("span", null, "\u21E0 ", minPct, "% min"), /*#__PURE__*/React.createElement("span", null, "100% \u21E2")))), /*#__PURE__*/React.createElement("div", {
+    className: "rounded border border-zinc-700 bg-zinc-900/50 p-3 space-y-1.5"
+  }, /*#__PURE__*/React.createElement("div", {
+    className: "flex justify-between text-xs font-medium"
+  }, /*#__PURE__*/React.createElement("span", {
+    className: "text-amber-400"
+  }, "Sole con/kh\u1ED5"), /*#__PURE__*/React.createElement("span", {
+    className: "text-amber-300 font-mono text-base"
+  }, sole.count)), /*#__PURE__*/React.createElement("div", {
+    className: "flex justify-between text-xs"
+  }, /*#__PURE__*/React.createElement("span", {
+    className: "text-zinc-400"
+  }, "Hi\u1EC7u su\u1EA5t"), /*#__PURE__*/React.createElement("span", {
+    className: `font-mono ${parseFloat(soleYield) > 50 ? "text-emerald-400" : "text-amber-400"}`
+  }, soleYield, "%")), /*#__PURE__*/React.createElement("div", {
+    className: "flex justify-between text-xs"
+  }, /*#__PURE__*/React.createElement("span", {
+    className: "text-zinc-400"
+  }, "So v\u1EDBi th\u01B0\u1EDDng"), /*#__PURE__*/React.createElement("span", {
+    className: `font-mono font-medium ${saving > 0 ? "text-emerald-400" : saving < 0 ? "text-rose-400" : "text-zinc-400"}`
+  }, saving > 0 ? "+" : "", saving, " con")), sole.rotBase && /*#__PURE__*/React.createElement("div", {
+    className: "text-[10px] text-amber-300 font-mono"
+  }, "\u27F3 Xoay die 90\xB0 t\u1ED1i \u01B0u h\u01A1n"), clampedPct < 100 && /*#__PURE__*/React.createElement("div", {
+    className: "text-[10px] text-emerald-400 font-mono"
+  }, "\u2195 L\u1ED3ng ", 100 - clampedPct, "% \xB7 ", sole.label), /*#__PURE__*/React.createElement("div", {
+    className: "flex justify-between text-xs pt-1 border-t border-zinc-800"
+  }, /*#__PURE__*/React.createElement("span", {
+    className: "text-zinc-400"
+  }, "S\u1ED1 t\u1EDD c\u1EA7n in"), /*#__PURE__*/React.createElement("span", {
+    className: "text-emerald-400 font-mono font-medium"
+  }, sole.count > 0 ? Math.ceil(qty / sole.count) : '-')))))), /*#__PURE__*/React.createElement("div", {
+    className: "relative bg-zinc-950 overflow-hidden h-full",
+    style: {
+      cursor: 'grab'
+    },
+    onWheel: onWhl,
+    onMouseDown: onPanDown,
+    onMouseMove: onPanMove,
+    onMouseUp: onPanUp,
+    onMouseLeave: e => {
+      panRef.current.dragging = false;
+      e.currentTarget.style.cursor = 'grab';
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    className: "absolute top-2 right-2 z-10 flex items-center gap-1 bg-zinc-900/90 border border-zinc-700 rounded-lg px-1 py-0.5",
+    onMouseDown: e => e.stopPropagation()
+  }, /*#__PURE__*/React.createElement("button", {
+    onClick: () => setZoom(v => Math.max(0.3, +(v - 0.2).toFixed(1))),
+    className: "w-7 h-7 flex items-center justify-center text-zinc-300 hover:text-white text-sm font-bold"
+  }, "\u2212"), /*#__PURE__*/React.createElement("span", {
+    className: "text-[10px] font-mono text-zinc-400 w-8 text-center"
+  }, Math.round(zoom * 100), "%"), /*#__PURE__*/React.createElement("button", {
+    onClick: () => setZoom(v => Math.min(5, +(v + 0.2).toFixed(1))),
+    className: "w-7 h-7 flex items-center justify-center text-zinc-300 hover:text-white text-sm font-bold"
+  }, "+"), /*#__PURE__*/React.createElement("button", {
+    onClick: () => {
+      setZoom(1);
+      setPanX(0);
+      setPanY(0);
+    },
+    className: "px-1.5 h-7 flex items-center text-[10px] text-zinc-500 hover:text-zinc-200 border-l border-zinc-700 ml-0.5"
+  }, "Reset")), tab === "die" && /*#__PURE__*/React.createElement(React.Fragment, null, grid && /*#__PURE__*/React.createElement("div", {
+    className: "absolute inset-0",
+    style: {
+      backgroundImage: "linear-gradient(#1e293b55 1px,transparent 1px),linear-gradient(90deg,#1e293b55 1px,transparent 1px)",
+      backgroundSize: "20px 20px"
+    }
+  }), /*#__PURE__*/React.createElement("div", {
+    className: "relative p-6 flex items-center justify-center h-full",
+    style: {
+      transform: `translate(${panX}px,${panY}px) scale(${zoom})`,
+      transformOrigin: 'center center'
+    }
+  }, err ? /*#__PURE__*/React.createElement("div", {
+    className: "text-amber-400 text-sm font-mono"
+  }, err) : /*#__PURE__*/React.createElement("svg", {
+    viewBox: `${bb.x} ${bb.y} ${bb.w} ${bb.h}`,
+    style: {
+      width: "90%",
+      maxHeight: "90%"
+    },
+    preserveAspectRatio: "xMidYMid meet",
+    className: "drop-shadow-[0_0_18px_rgba(0,0,0,0.6)]"
+  }, /*#__PURE__*/React.createElement("path", {
+    d: cuts,
+    fill: "none",
+    stroke: "#1d4ed8",
+    strokeWidth: "0.6",
+    strokeLinejoin: "round"
+  }), /*#__PURE__*/React.createElement("path", {
+    d: cre,
+    fill: "none",
+    stroke: "#dc2626",
+    strokeWidth: "0.5",
+    strokeDasharray: "3,2"
+  })))), (tab === "imp" || tab === "sole") && paths && /*#__PURE__*/React.createElement("div", {
+    className: "p-4 flex items-center justify-center h-full",
+    style: {
+      transform: `translate(${panX}px,${panY}px) scale(${zoom})`,
+      transformOrigin: 'center center'
+    }
+  }, /*#__PURE__*/React.createElement("svg", {
+    viewBox: `-8 -8 ${paper.w + 16} ${paper.h + 16}`,
+    style: {
+      width: "90%",
+      maxHeight: "90%"
+    },
+    preserveAspectRatio: "xMidYMid meet"
+  }, /*#__PURE__*/React.createElement("rect", {
+    x: "0",
+    y: "0",
+    width: paper.w,
+    height: paper.h,
+    fill: tab === "sole" && isLabel ? "#f8fafc" : "#1e293b",
+    stroke: "#475569",
+    strokeWidth: "1.5",
+    rx: "3"
+  }), grip > 0 && /*#__PURE__*/React.createElement("rect", {
+    x: "0",
+    y: "0",
+    width: grip,
+    height: paper.h,
+    fill: "#dc262615"
+  }), tab === "sole" && sole.isHex && /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("rect", {
+    x: grip,
+    y: "5",
+    width: paper.w - grip - 5,
+    height: paper.h - 10,
+    fill: "none",
+    stroke: "#94a3b8",
+    strokeWidth: "0.5",
+    strokeDasharray: "4,3",
+    rx: "1"
+  }), sole.items.map((it, i) => {
+    const isRound = type === 'tem_tron' || type === 'tem_elip';
+    return isRound ? /*#__PURE__*/React.createElement("ellipse", {
+      key: i,
+      cx: it.cx,
+      cy: it.cy,
+      rx: it.rx,
+      ry: it.ry,
+      fill: "none",
+      stroke: it.rot ? '#2563eb' : '#334155',
+      strokeWidth: "0.8",
+      transform: it.rot ? `rotate(${it.rot},${it.cx},${it.cy})` : undefined
+    }) : /*#__PURE__*/React.createElement("rect", {
+      key: i,
+      x: it.cx - it.rx,
+      y: it.cy - it.ry,
+      width: it.rx * 2,
+      height: it.ry * 2,
+      rx: Math.min(cr, it.rx, it.ry),
+      fill: "none",
+      stroke: "#334155",
+      strokeWidth: "0.8"
+    });
+  })), !(tab === "sole" && sole.isHex) && /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement(DieShapeDef, null), (tab === "imp" ? Array.from({
+    length: imp.count
+  }).map((_, i) => {
+    const c = i % imp.cols,
+      r = Math.floor(i / imp.cols);
+    return {
+      x: grip + c * (imp.cw + gap),
+      y: r * (imp.ch + gap),
+      w: imp.cw,
+      h: imp.ch,
+      rot: imp.rotated ? 90 : 0
+    };
+  }) : sole.items).map((it, i) => /*#__PURE__*/React.createElement("use", {
+    key: i,
+    href: "#ds",
+    transform: tform(it)
+  }))), /*#__PURE__*/React.createElement("text", {
+    x: paper.w - 3,
+    y: 12,
+    textAnchor: "end",
+    fontSize: "7",
+    fill: tab === "sole" ? "#f59e0b" : "#94a3b8",
+    fontFamily: "monospace"
+  }, tab === "sole" ? sole.isHex ? `${sole.count} tem/tờ · hex` : `${sole.count} con · sole · ${soleYield}%` : `${imp.count} con · ${impYield}%`), tab === "imp" && imp.count > 0 && (() => {
+    const uw = imp.cols * imp.cw + (imp.cols - 1) * gap,
+      uh = imp.rows * imp.ch + (imp.rows - 1) * gap;
+    return /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("rect", {
+      x: grip,
+      y: 0,
+      width: uw,
+      height: uh,
+      fill: "none",
+      stroke: "#22d3ee",
+      strokeWidth: "0.8",
+      strokeDasharray: "5,3",
+      opacity: "0.4"
+    }), /*#__PURE__*/React.createElement("line", {
+      x1: grip,
+      y1: uh + 5,
+      x2: grip + uw,
+      y2: uh + 5,
+      stroke: "#22d3ee",
+      strokeWidth: "0.6",
+      markerStart: "url(#arr)",
+      markerEnd: "url(#arr)"
+    }), /*#__PURE__*/React.createElement("text", {
+      x: grip + uw / 2,
+      y: uh + 12,
+      textAnchor: "middle",
+      fontSize: "6",
+      fill: "#22d3ee",
+      fontFamily: "monospace"
+    }, uw.toFixed(0), " mm"), /*#__PURE__*/React.createElement("line", {
+      x1: grip + uw + 5,
+      y1: 0,
+      x2: grip + uw + 5,
+      y2: uh,
+      stroke: "#22d3ee",
+      strokeWidth: "0.6"
+    }), /*#__PURE__*/React.createElement("text", {
+      x: grip + uw + 8,
+      y: uh / 2,
+      fontSize: "6",
+      fill: "#22d3ee",
+      fontFamily: "monospace",
+      transform: `rotate(90,${grip + uw + 8},${uh / 2})`,
+      textAnchor: "middle"
+    }, uh.toFixed(0), " mm"), /*#__PURE__*/React.createElement("defs", null, /*#__PURE__*/React.createElement("marker", {
+      id: "arr",
+      markerWidth: "4",
+      markerHeight: "4",
+      refX: "2",
+      refY: "2",
+      orient: "auto"
+    }, /*#__PURE__*/React.createElement("path", {
+      d: "M0,0 L4,2 L0,4",
+      fill: "#22d3ee",
+      opacity: "0.6"
+    }))));
+  })(), tab === "sole" && sole.isHex && sole.count > 0 && /*#__PURE__*/React.createElement("text", {
+    x: paper.w / 2,
+    y: paper.h + 10,
+    textAnchor: "middle",
+    fontSize: "5",
+    fill: "#64748b",
+    fontFamily: "monospace"
+  }, qty, " tem \xF7 ", sole.count, " tem/t\u1EDD = ", Math.ceil(qty / sole.count), " t\u1EDD"))))));
+}
+ReactDOM.createRoot(document.getElementById('root')).render(React.createElement(DielineTool));
+</script></body></html>

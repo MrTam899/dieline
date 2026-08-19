@@ -1232,7 +1232,10 @@ const NF = ({
     step: step,
     onFocus: e => e.target.select(),
     onChange: e => {
-      const raw = e.target.value;
+      let raw = e.target.value;
+      // Remove unnecessary leading zeros: 070 -> 70, 005 -> 5,
+      // while preserving decimals such as 0.5.
+      raw = raw.replace(/^(-?)0+(?=\d)/, '$1');
       setText(raw);
       commit(raw);
     },

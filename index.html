@@ -1211,13 +1211,20 @@ const NF = ({
   step = 1
 }) => {
   const [text, setText] = useState(String(value));
+  const [editing, setEditing] = useState(false);
   useEffect(() => {
-    setText(String(value));
-  }, [value]);
+    // Do not overwrite what the user is typing while the field has focus.
+    if (!editing) setText(String(value));
+  }, [value, editing]);
+  const parseRaw = raw => {
+    const normalized = String(raw).replace(',', '.').trim();
+    if (normalized === '' || normalized === '-' || normalized === '.' || normalized === '-.') return null;
+    const n = Number(normalized);
+    return Number.isFinite(n) ? n : null;
+  };
   const commit = raw => {
-    if (raw === '' || raw === '-' || raw === '.' || raw === '-.') return;
-    const n = Number(raw);
-    if (!Number.isFinite(n)) return;
+    const n = parseRaw(raw);
+    if (n == null) return;
     set(Math.max(min, Math.min(max, n)));
   };
   return /*#__PURE__*/React.createElement("label", {
@@ -1225,26 +1232,38 @@ const NF = ({
   }, /*#__PURE__*/React.createElement("span", {
     className: "text-[10px] uppercase tracking-wider text-zinc-400 font-mono"
   }, label), /*#__PURE__*/React.createElement("input", {
-    type: "number",
+    type: "text",
+    inputMode: "decimal",
     value: text,
-    min: min,
-    max: max,
-    step: step,
-    onFocus: e => e.target.select(),
+    onFocus: e => {
+      setEditing(true);
+      e.target.select();
+    },
+    onKeyDown: e => {
+      // Text input prevents browser number-step behavior; Enter commits cleanly.
+      if (e.key === 'Enter') e.currentTarget.blur();
+    },
+    onWheel: e => {
+      // Scrolling the settings panel must never change a focused dimension.
+      e.currentTarget.blur();
+    },
     onChange: e => {
       let raw = e.target.value;
+      // Only allow a numeric editing form (comma or dot decimal separator).
+      if (!/^-?\d*(?:[.,]\d*)?$/.test(raw)) return;
       // Remove unnecessary leading zeros: 070 -> 70, 005 -> 5,
-      // while preserving decimals such as 0.5.
+      // while preserving decimals such as 0.5 / 0,5.
       raw = raw.replace(/^(-?)0+(?=\d)/, '$1');
       setText(raw);
       commit(raw);
     },
     onBlur: () => {
-      if (text === '' || text === '-' || text === '.' || text === '-.') {
+      setEditing(false);
+      const n = parseRaw(text);
+      if (n == null) {
         setText(String(value));
       } else {
-        const n = Number(text);
-        const clamped = Number.isFinite(n) ? Math.max(min, Math.min(max, n)) : value;
+        const clamped = Math.max(min, Math.min(max, n));
         set(clamped);
         setText(String(clamped));
       }
@@ -1252,6 +1271,28 @@ const NF = ({
     className: "bg-zinc-900 border border-zinc-700 rounded px-2 py-1.5 text-sm font-mono text-zinc-100 focus:border-blue-500 focus:outline-none"
   }));
 };
+const STORAGE_KEY = 'dieline_tool_v2_settings';
+const PRESET_KEY = 'dieline_tool_v2_presets';
+const DEFAULT_SETTINGS = {
+  type: 'naptd', L: 120, W: 60, H: 160, p: 0.5, z: 12, sx: 11,
+  dustAuto: true, dustH: 33, cr: 3, holeD: 5, holeY: 8,
+  bG: 80, bHTop: 30, bHBot: 60, bGlue: 20, bHR: 4, bHOX: 55, bHGAP: 10,
+  eFlap: 30, eBot: 15, eGlue: 15,
+  paperIdx: 0, cpw: 790, cph: 1090, gap: 3, grip: 10, gapH: 2, gapV: 1,
+  qty: 0, soleMode: 'h180', stepPct: 100, grid: true
+};
+function safeLoad(key, fallback) {
+  try {
+    const raw = localStorage.getItem(key);
+    return raw ? JSON.parse(raw) : fallback;
+  } catch (_) {
+    return fallback;
+  }
+}
+function safeSave(key, value) {
+  try { localStorage.setItem(key, JSON.stringify(value)); } catch (_) {}
+}
+
 function DielineTool() {
   const [tab, setTab] = useState("die");
   const [type, setType] = useState("naptd");
@@ -1322,6 +1363,52 @@ function DielineTool() {
   const [qty, setQty] = useState(0);
   const [soleMode, setSoleMode] = useState('h180');
   const [stepPct, setStepPct] = useState(100);
+  const [presets, setPresets] = useState(() => safeLoad(PRESET_KEY, []));
+  const [presetName, setPresetName] = useState('');
+  const didMountRef = useRef(false);
+
+  const getSettings = () => ({
+    type, L, W, H, p, z, sx, dustAuto, dustH, cr, holeD, holeY,
+    bG, bHTop, bHBot, bGlue, bHR, bHOX, bHGAP,
+    eFlap, eBot, eGlue, paperIdx, cpw, cph, gap, grip, gapH, gapV,
+    qty, soleMode, stepPct, grid
+  });
+  const applySettings = s => {
+    if (!s || typeof s !== 'object') return;
+    if (s.type != null && BOXES[s.type]) setType(s.type);
+    if (s.L != null) setL(s.L); if (s.W != null) setW(s.W); if (s.H != null) setH(s.H);
+    if (s.p != null) setP(s.p); if (s.z != null) setZ(s.z); if (s.sx != null) setSx(s.sx);
+    if (s.dustAuto != null) setDA(!!s.dustAuto); if (s.dustH != null) setDH(s.dustH);
+    if (s.cr != null) setCr(s.cr); if (s.holeD != null) setHoleD(s.holeD); if (s.holeY != null) setHoleY(s.holeY);
+    if (s.bG != null) setBG(s.bG); if (s.bHTop != null) setBHTop(s.bHTop); if (s.bHBot != null) setBHBot(s.bHBot);
+    if (s.bGlue != null) setBGlue(s.bGlue); if (s.bHR != null) setBHR(s.bHR); if (s.bHOX != null) setBHOX(s.bHOX); if (s.bHGAP != null) setBHGAP(s.bHGAP);
+    if (s.eFlap != null) setEFlap(s.eFlap); if (s.eBot != null) setEBot(s.eBot); if (s.eGlue != null) setEGlue(s.eGlue);
+    if (s.paperIdx != null) setPI(s.paperIdx); if (s.cpw != null) setCpw(s.cpw); if (s.cph != null) setCph(s.cph);
+    if (s.gap != null) setGap(s.gap); if (s.grip != null) setGrip(s.grip); if (s.gapH != null) setGapH(s.gapH); if (s.gapV != null) setGapV(s.gapV);
+    if (s.qty != null) setQty(s.qty); if (s.soleMode != null) setSoleMode(s.soleMode); if (s.stepPct != null) setStepPct(s.stepPct);
+    if (s.grid != null) setGrid(!!s.grid);
+    setZoom(1); setPanX(0); setPanY(0);
+  };
+  useEffect(() => {
+    applySettings(safeLoad(STORAGE_KEY, null));
+  }, []);
+  useEffect(() => {
+    if (!didMountRef.current) { didMountRef.current = true; return; }
+    safeSave(STORAGE_KEY, getSettings());
+  }, [type, L, W, H, p, z, sx, dustAuto, dustH, cr, holeD, holeY, bG, bHTop, bHBot, bGlue, bHR, bHOX, bHGAP, eFlap, eBot, eGlue, paperIdx, cpw, cph, gap, grip, gapH, gapV, qty, soleMode, stepPct, grid]);
+  useEffect(() => { safeSave(PRESET_KEY, presets); }, [presets]);
+  const resetDefaults = () => {
+    applySettings(DEFAULT_SETTINGS);
+    safeSave(STORAGE_KEY, DEFAULT_SETTINGS);
+  };
+  const savePreset = () => {
+    const nm = presetName.trim();
+    if (!nm) return;
+    const item = { id: Date.now(), name: nm, settings: getSettings() };
+    setPresets(prev => [item, ...prev.filter(x => x.name !== nm)].slice(0, 30));
+    setPresetName('');
+  };
+  const deletePreset = id => setPresets(prev => prev.filter(x => x.id !== id));
   const def = BOXES[type] || BOXES.naptd;
   const cat = def.cat || 'box';
   const err = cat === 'box' && (type === 'naptd' || type === 'daygai' || type === 'thang') && L <= W ? "L phải > W" : null;
@@ -1371,6 +1458,20 @@ function DielineTool() {
   const cre = paths ? creasesD(paths, bb) : '';
   const dW = Math.ceil(bb.tw),
     dH = Math.ceil(bb.th);
+  const warnings = [];
+  if (cat === 'box') {
+    if (L <= 0 || W <= 0 || H <= 0) warnings.push('Kích thước L/W/H phải lớn hơn 0.');
+    if ((type === 'naptd' || type === 'daygai' || type === 'thang') && L <= W) warnings.push('Loại hộp này nên có Dài L > Rộng W.');
+    if (sx >= Math.min(L, W) * 0.45) warnings.push('Mép dán đang khá lớn so với kích thước hộp.');
+    if (z >= W * 0.6) warnings.push('Lưỡi gài Z đang lớn so với Rộng W.');
+    if (!dustAuto && dustH > W) warnings.push('Cao tai gấp không nên lớn hơn Rộng W.');
+  }
+  if (cat === 'tag' && holeD > 0 && holeY < holeD / 2) warnings.push('Lỗ treo đang quá sát mép thẻ.');
+  if (cat === 'bag') {
+    if (bG >= L) warnings.push('Hông túi nên nhỏ hơn chiều ngang túi.');
+    if (bGlue >= L * 0.5) warnings.push('Tay dán túi đang khá lớn so với chiều ngang.');
+  }
+  if (dW > 3000 || dH > 3000) warnings.push('Khổ khuôn rất lớn; hãy kiểm tra lại đơn vị và thông số.');
   const bbCx = bb.x + bb.w / 2,
     bbCy = bb.y + bb.h / 2;
   const paper = paperIdx < PAPERS.length ? PAPERS[paperIdx] : {
@@ -1618,7 +1719,7 @@ function DielineTool() {
     className: `px-3 py-1 ${tab === k ? "bg-blue-600 text-white" : "bg-zinc-900 text-zinc-400 hover:text-zinc-200"}`
   }, lb)))), /*#__PURE__*/React.createElement("span", {
     className: "font-mono text-[11px] text-zinc-500"
-  }, dW, "\xD7", dH)), /*#__PURE__*/React.createElement("div", {
+  }, "Khổ khuôn ", dW, " × ", dH, " mm")), /*#__PURE__*/React.createElement("div", {
     className: "grid md:grid-cols-[270px_1fr]",
     style: {
       height: 'calc(100vh - 44px)'
@@ -1680,7 +1781,56 @@ function DielineTool() {
       }
     },
     className: `w-full text-left px-3 py-2 text-xs hover:bg-blue-500/15 ${k === type ? "bg-blue-500/10 text-blue-300" : "text-zinc-200"}`
-  }, v.name)))), cat === 'box' && /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("div", {
+  }, v.name)))), /*#__PURE__*/React.createElement("div", {
+    className: "rounded border border-zinc-700 bg-zinc-900/50 p-2.5 space-y-2"
+  }, /*#__PURE__*/React.createElement("div", {
+    className: "flex items-center justify-between"
+  }, /*#__PURE__*/React.createElement("span", {
+    className: "text-[10px] uppercase tracking-wider text-zinc-400 font-mono"
+  }, "Lưu & mẫu"), /*#__PURE__*/React.createElement("span", {
+    className: "text-[10px] text-emerald-400 font-mono"
+  }, "● tự lưu")), /*#__PURE__*/React.createElement("div", {
+    className: "flex gap-1.5"
+  }, /*#__PURE__*/React.createElement("input", {
+    value: presetName,
+    onChange: e => setPresetName(e.target.value),
+    onKeyDown: e => { if (e.key === 'Enter') savePreset(); },
+    placeholder: "Tên mẫu...",
+    className: "min-w-0 flex-1 bg-zinc-950 border border-zinc-700 rounded px-2 py-1.5 text-xs focus:border-blue-500 focus:outline-none"
+  }), /*#__PURE__*/React.createElement("button", {
+    onClick: savePreset,
+    disabled: !presetName.trim(),
+    className: "px-2 py-1.5 rounded bg-blue-600 hover:bg-blue-500 disabled:opacity-40 text-xs"
+  }, "Lưu"), /*#__PURE__*/React.createElement("button", {
+    onClick: resetDefaults,
+    className: "px-2 py-1.5 rounded border border-zinc-700 hover:border-zinc-500 text-xs"
+  }, "Mặc định")), presets.length > 0 && /*#__PURE__*/React.createElement("div", {
+    className: "max-h-28 overflow-y-auto space-y-1"
+  }, presets.map(pr => /*#__PURE__*/React.createElement("div", {
+    key: pr.id,
+    className: "flex items-center gap-1"
+  }, /*#__PURE__*/React.createElement("button", {
+    onClick: () => applySettings(pr.settings),
+    title: pr.name,
+    className: "min-w-0 flex-1 text-left px-2 py-1 rounded bg-zinc-950 hover:bg-zinc-800 text-[11px] truncate"
+  }, pr.name), /*#__PURE__*/React.createElement("button", {
+    onClick: () => deletePreset(pr.id),
+    title: "Xóa mẫu",
+    className: "px-2 py-1 rounded border border-zinc-800 hover:border-red-700 text-zinc-500 hover:text-red-400 text-[11px]"
+  }, "×")))), /*#__PURE__*/React.createElement("div", {
+    className: "flex items-center justify-between rounded border border-zinc-800 bg-zinc-950 px-2.5 py-2"
+  }, /*#__PURE__*/React.createElement("span", {
+    className: "text-[10px] uppercase tracking-wider text-zinc-500 font-mono"
+  }, "Khổ khuôn"), /*#__PURE__*/React.createElement("span", {
+    className: "text-sm font-mono text-cyan-300 font-medium"
+  }, dW, " × ", dH, " mm")), warnings.length > 0 && /*#__PURE__*/React.createElement("div", {
+    className: "rounded border border-amber-700/60 bg-amber-950/30 p-2 space-y-1"
+  }, /*#__PURE__*/React.createElement("div", {
+    className: "text-[10px] uppercase tracking-wider text-amber-400 font-mono"
+  }, "⚠ Kiểm tra thông số"), warnings.map((w, i) => /*#__PURE__*/React.createElement("div", {
+    key: i,
+    className: "text-[11px] leading-snug text-amber-200"
+  }, "• ", w)))), cat === 'box' && /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("div", {
     className: "grid grid-cols-3 gap-2"
   }, /*#__PURE__*/React.createElement(NF, {
     label: "D\xE0i l",

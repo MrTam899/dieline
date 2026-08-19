@@ -19,7 +19,8 @@ const {
   useMemo,
   useState,
   useRef,
-  useCallback
+  useCallback,
+  useEffect
 } = React;
 const Icon = ({
   d,
@@ -1208,19 +1209,46 @@ const NF = ({
   min = 0,
   max = 3000,
   step = 1
-}) => /*#__PURE__*/React.createElement("label", {
-  className: "flex flex-col gap-1"
-}, /*#__PURE__*/React.createElement("span", {
-  className: "text-[10px] uppercase tracking-wider text-zinc-400 font-mono"
-}, label), /*#__PURE__*/React.createElement("input", {
-  type: "number",
-  value: value,
-  min: min,
-  max: max,
-  step: step,
-  onChange: e => set(Math.max(min, Math.min(max, Number(e.target.value) || 0))),
-  className: "bg-zinc-900 border border-zinc-700 rounded px-2 py-1.5 text-sm font-mono text-zinc-100 focus:border-blue-500 focus:outline-none"
-}));
+}) => {
+  const [text, setText] = useState(String(value));
+  useEffect(() => {
+    setText(String(value));
+  }, [value]);
+  const commit = raw => {
+    if (raw === '' || raw === '-' || raw === '.' || raw === '-.') return;
+    const n = Number(raw);
+    if (!Number.isFinite(n)) return;
+    set(Math.max(min, Math.min(max, n)));
+  };
+  return /*#__PURE__*/React.createElement("label", {
+    className: "flex flex-col gap-1"
+  }, /*#__PURE__*/React.createElement("span", {
+    className: "text-[10px] uppercase tracking-wider text-zinc-400 font-mono"
+  }, label), /*#__PURE__*/React.createElement("input", {
+    type: "number",
+    value: text,
+    min: min,
+    max: max,
+    step: step,
+    onFocus: e => e.target.select(),
+    onChange: e => {
+      const raw = e.target.value;
+      setText(raw);
+      commit(raw);
+    },
+    onBlur: () => {
+      if (text === '' || text === '-' || text === '.' || text === '-.') {
+        setText(String(value));
+      } else {
+        const n = Number(text);
+        const clamped = Number.isFinite(n) ? Math.max(min, Math.min(max, n)) : value;
+        set(clamped);
+        setText(String(clamped));
+      }
+    },
+    className: "bg-zinc-900 border border-zinc-700 rounded px-2 py-1.5 text-sm font-mono text-zinc-100 focus:border-blue-500 focus:outline-none"
+  }));
+};
 function DielineTool() {
   const [tab, setTab] = useState("die");
   const [type, setType] = useState("naptd");

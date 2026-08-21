@@ -39,42 +39,32 @@ Policy:
   .sidebar-panel{min-width:0;overflow-x:hidden}
   @media(max-width:768px){.app-main-grid{grid-template-columns:1fr!important}.sidebar-resize-handle,.sidebar-toggle{display:none!important}.sidebar-panel{display:block!important}}
 
-  /* V7.0.3 — MOBILE NAV: swipe + explicit pager */
-  :root{--mobile-header-h:58px}
+  /* V7.0.4 — MOBILE TOUCH PRO */
+  :root{--mobile-header-h:62px;--mobile-nav-h:52px}
   @media (max-width:900px){
     html,body,#root{width:100%;height:100%;min-height:100%;overflow:hidden;overscroll-behavior:none;-webkit-text-size-adjust:100%}
     body{min-width:0!important}
-    header,.topbar{flex-wrap:nowrap!important;height:auto!important;min-height:var(--mobile-header-h);overflow-x:auto!important;overflow-y:hidden!important;white-space:nowrap!important;-webkit-overflow-scrolling:touch;scrollbar-width:none}
+    header,.topbar{flex-wrap:nowrap!important;height:var(--mobile-header-h)!important;min-height:var(--mobile-header-h)!important;max-height:var(--mobile-header-h)!important;overflow-x:auto!important;overflow-y:hidden!important;white-space:nowrap!important;-webkit-overflow-scrolling:touch;scrollbar-width:none;touch-action:pan-x}
     header::-webkit-scrollbar,.topbar::-webkit-scrollbar{display:none}
-    .app-main-grid{display:flex!important;grid-template-columns:none!important;width:100vw!important;height:calc(100dvh - var(--mobile-header-h))!important;min-height:0!important;overflow-x:auto!important;overflow-y:hidden!important;scroll-snap-type:x mandatory;scroll-behavior:smooth;-webkit-overflow-scrolling:touch;overscroll-behavior-x:contain;touch-action:pan-x pan-y;scrollbar-width:none}
+    .app-main-grid{display:flex!important;grid-template-columns:none!important;width:100vw!important;height:calc(100dvh - var(--mobile-header-h) - var(--mobile-nav-h))!important;min-height:0!important;overflow-x:hidden!important;overflow-y:hidden!important;scroll-snap-type:none!important;scroll-behavior:smooth;-webkit-overflow-scrolling:touch;overscroll-behavior:none;touch-action:auto!important;scrollbar-width:none}
     .app-main-grid::-webkit-scrollbar{display:none}
-    .sidebar-panel{flex:0 0 100vw!important;width:100vw!important;max-width:100vw!important;min-width:100vw!important;height:100%!important;max-height:100%!important;overflow-y:auto!important;overflow-x:hidden!important;border-right:0!important;border-bottom:0!important;scroll-snap-align:start;scroll-snap-stop:always;-webkit-overflow-scrolling:touch;overscroll-behavior-y:contain;padding-bottom:28px}
+    .sidebar-panel{flex:0 0 100vw!important;width:100vw!important;max-width:100vw!important;min-width:100vw!important;height:100%!important;max-height:100%!important;overflow-y:auto!important;overflow-x:hidden!important;border-right:0!important;border-bottom:0!important;-webkit-overflow-scrolling:touch;overscroll-behavior-y:contain;padding:12px 12px 40px!important;touch-action:pan-y!important}
     .sidebar-panel>div{max-height:none!important}
     .sidebar-resize-handle,.sidebar-toggle{display:none!important}
-    .app-main-grid>:not(.sidebar-panel):not(.sidebar-resize-handle):not(.sidebar-toggle){flex:0 0 100vw!important;width:100vw!important;min-width:100vw!important;max-width:100vw!important;height:100%!important;min-height:0!important;scroll-snap-align:start;scroll-snap-stop:always;overflow:hidden!important}
-    .app-main-grid svg{max-width:100%!important;max-height:100%!important}
-    .absolute.top-2.right-2,.absolute.top-3.right-3{max-width:calc(100vw - 16px)!important;overflow-x:auto!important;overflow-y:hidden!important;white-space:nowrap!important;-webkit-overflow-scrolling:touch;scrollbar-width:none}
+    .mobile-drawing-page{flex:0 0 100vw!important;width:100vw!important;min-width:100vw!important;max-width:100vw!important;height:100%!important;min-height:0!important;overflow:hidden!important;touch-action:none!important;user-select:none!important;-webkit-user-select:none!important}
+    .mobile-drawing-page svg{max-width:none!important;max-height:none!important;pointer-events:none}
+    .absolute.top-2.right-2,.absolute.top-3.right-3{max-width:calc(100vw - 16px)!important;overflow-x:auto!important;overflow-y:hidden!important;white-space:nowrap!important;-webkit-overflow-scrolling:touch;scrollbar-width:none;touch-action:pan-x!important}
     .absolute.top-2.right-2::-webkit-scrollbar,.absolute.top-3.right-3::-webkit-scrollbar{display:none}
-    .app-main-grid button,header button,nav button{min-height:38px;touch-action:manipulation}
+    .app-main-grid button,header button,nav button{min-height:40px;touch-action:manipulation}
     input,select,textarea,button{font-size:16px!important}
-    [role="dialog"],.modal,.dialog{max-width:calc(100vw - 24px)!important;max-height:calc(100dvh - 24px)!important;overflow:auto!important}
+    [role="dialog"],.modal,.dialog{max-width:calc(100vw - 20px)!important;max-height:calc(100dvh - 20px)!important;overflow:auto!important}
+    .mobile-page-nav{position:fixed;left:0;right:0;bottom:0;height:var(--mobile-nav-h);z-index:9999;display:grid;grid-template-columns:1fr 1fr;background:#09090bf2;border-top:1px solid #3f3f46;padding:6px 8px;gap:8px;padding-bottom:max(6px,env(safe-area-inset-bottom))}
+    .mobile-page-nav button{min-height:40px;border:1px solid #3f3f46;border-radius:9px;background:#18181b;color:#a1a1aa;font:600 13px monospace}
+    .mobile-page-nav button.active{border-color:#2563eb;background:#1d4ed8;color:white}
   }
   @media (max-width:600px){
-    button{min-height:40px}
-    input,select,textarea{min-height:40px}
-    .text-\[6px\],.text-\[7px\],.text-\[8px\],.text-\[9px\]{font-size:11px!important;line-height:1.25!important}
-    .text-\[10px\]{font-size:12px!important}
-  }
-
-  /* V7.0.3 mobile navigation hardening */
-  .mobile-page-nav{display:none}
-  @media (max-width:900px){
-    .app-main-grid{scroll-snap-type:none!important;touch-action:auto!important}
-    .app-main-grid>.sidebar-panel{scroll-snap-align:none!important}
-    .app-main-grid>:not(.sidebar-panel):not(.sidebar-resize-handle):not(.sidebar-toggle){scroll-snap-align:none!important}
-    .mobile-page-nav{display:flex;position:fixed;right:12px;bottom:14px;z-index:9999;gap:6px;padding:5px;border:1px solid #3f3f46;border-radius:10px;background:rgba(9,9,11,.94);box-shadow:0 4px 18px rgba(0,0,0,.45)}
-    .mobile-page-nav button{min-height:38px!important;padding:0 12px;border:1px solid #52525b;border-radius:7px;background:#18181b;color:#d4d4d8;font:12px monospace}
-    .mobile-page-nav button.active{background:#2563eb;color:#fff;border-color:#3b82f6}
+    button{min-height:40px} input,select,textarea{min-height:40px}
+    .text-\[6px\],.text-\[7px\],.text-\[8px\],.text-\[9px\]{font-size:11px!important;line-height:1.25!important}.text-\[10px\]{font-size:12px!important}
   }
 </style>
 </head>
@@ -2048,23 +2038,29 @@ function DielineTool() {
   });
   const onPanDown = useCallback(e => {
     lastManualViewRef.current = Date.now();
-    if (e.button !== 0) return;
+    if (e.pointerType === 'mouse' && e.button !== 0) return;
+    if (e.target.closest && e.target.closest("button,input,select,textarea,a")) return;
     const r = panRef.current;
     r.dragging = true;
+    r.pointerId = e.pointerId;
     r.sx = e.clientX;
     r.sy = e.clientY;
     r.ox = panX;
     r.oy = panY;
+    try { e.currentTarget.setPointerCapture(e.pointerId); } catch {}
     e.currentTarget.style.cursor = 'grabbing';
   }, [panX, panY]);
   const onPanMove = useCallback(e => {
     const r = panRef.current;
-    if (!r.dragging) return;
+    if (!r.dragging || (r.pointerId != null && e.pointerId !== r.pointerId)) return;
     setPanX(r.ox + e.clientX - r.sx);
     setPanY(r.oy + e.clientY - r.sy);
   }, []);
   const onPanUp = useCallback(e => {
-    panRef.current.dragging = false;
+    const r = panRef.current;
+    r.dragging = false;
+    r.pointerId = null;
+    try { if (e.currentTarget.hasPointerCapture && e.currentTarget.hasPointerCapture(e.pointerId)) e.currentTarget.releasePointerCapture(e.pointerId); } catch {}
     e.currentTarget.style.cursor = 'grab';
   }, []);
   const onWhl = useCallback(e => {
@@ -3970,7 +3966,7 @@ function DielineTool() {
   }, /*#__PURE__*/React.createElement("div", {
     className:"flex items-center justify-between gap-2"
   }, /*#__PURE__*/React.createElement("div", null,
-    /*#__PURE__*/React.createElement("div", {className:"text-[10px] font-mono text-emerald-300"}, "V7.0.3 · MOBILE NAV"),
+    /*#__PURE__*/React.createElement("div", {className:"text-[10px] font-mono text-emerald-300"}, "V7.0.4 · MOBILE TOUCH PRO"),
     /*#__PURE__*/React.createElement("div", {className:"text-[7px] text-zinc-600 mt-0.5"}, "Luồng Job · ưu tiên xử lý · sản lượng")
   ), /*#__PURE__*/React.createElement("button", {
     onClick:()=>setProductionDashboardOpen(v=>!v),
@@ -4855,7 +4851,7 @@ function DielineTool() {
     className: "font-mono text-sm tracking-tight"
   }, "DIELINE TOOL"), /*#__PURE__*/React.createElement("span", {
     className: "px-2 py-0.5 rounded border border-emerald-800 bg-emerald-950/30 text-[9px] font-mono font-semibold text-emerald-300 whitespace-nowrap"
-  }, "V7.0.3 · MOBILE NAV"), /*#__PURE__*/React.createElement("div", {
+  }, "V7.0.4 · MOBILE TOUCH PRO"), /*#__PURE__*/React.createElement("div", {
     className: "flex ml-2 rounded overflow-hidden border border-zinc-700 text-xs"
   }, [["die", "Khuôn"], ["imp", "Bình bài"], ["sole", "Sole"]].map(([k, lb]) => /*#__PURE__*/React.createElement("button", {
     key: k,
@@ -6037,17 +6033,17 @@ function DielineTool() {
     title: sidebarCollapsed ? "Mở bảng điều khiển" : "Thu gọn bảng điều khiển"
   }, sidebarCollapsed ? "›" : "‹"), /*#__PURE__*/React.createElement("div", {
     ref: viewerWrapRef,
-    className: "relative bg-zinc-950 overflow-hidden h-full",
+    className: "relative bg-zinc-950 overflow-hidden h-full mobile-drawing-page",
     style: {
       cursor: 'grab'
     },
     onWheel: onWhl,
-    onMouseDown: onPanDown,
-    onMouseMove: onPanMove,
-    onMouseUp: onPanUp,
-    onMouseLeave: e => {
-      panRef.current.dragging = false;
-      e.currentTarget.style.cursor = 'grab';
+    onPointerDown: onPanDown,
+    onPointerMove: onPanMove,
+    onPointerUp: onPanUp,
+    onPointerCancel: onPanUp,
+    onPointerLeave: e => {
+      if (e.pointerType === 'mouse') { panRef.current.dragging = false; e.currentTarget.style.cursor = 'grab'; }
     },
     onDoubleClick: e => {
       if (e.target.closest && e.target.closest("button")) return;
@@ -6291,43 +6287,40 @@ function DielineTool() {
 ReactDOM.createRoot(document.getElementById('root')).render(React.createElement(DielineTool));
 </script>
 <script>
-/* V7.0.3 mobile page navigation: reliable on Android/iOS even when nested panels scroll */
+/* V7.0.4 mobile navigation: page switch is separated from drawing pan. */
 (function(){
   function initMobileNav(){
     if(window.innerWidth>900) return;
     var grid=document.querySelector('.app-main-grid');
     if(!grid || document.querySelector('.mobile-page-nav')) return;
     var side=grid.querySelector('.sidebar-panel');
-    var pages=Array.from(grid.children).filter(function(el){
-      return !el.classList.contains('sidebar-resize-handle') && !el.classList.contains('sidebar-toggle');
-    });
-    var drawing=pages.find(function(el){return el!==side;});
+    var drawing=grid.querySelector('.mobile-drawing-page');
     if(!side || !drawing) return;
     var nav=document.createElement('div'); nav.className='mobile-page-nav';
     var b1=document.createElement('button'), b2=document.createElement('button');
-    b1.textContent='Thông số'; b2.textContent='Bản vẽ →'; b1.className='active';
+    b1.textContent='Thông số'; b2.textContent='Bản vẽ'; b1.className='active';
     nav.appendChild(b1); nav.appendChild(b2); document.body.appendChild(nav);
     function go(page){
-      var x=page===0?0:grid.clientWidth;
-      grid.scrollTo({left:x,behavior:'smooth'});
+      grid.scrollTo({left:page===0?0:grid.clientWidth,behavior:'smooth'});
       b1.classList.toggle('active',page===0); b2.classList.toggle('active',page===1);
-      b2.textContent=page===1?'← Bản vẽ':'Bản vẽ →';
     }
     b1.onclick=function(){go(0)}; b2.onclick=function(){go(1)};
-    var sx=0,sy=0,st=0;
-    grid.addEventListener('touchstart',function(e){
-      if(e.touches.length!==1) return; sx=e.touches[0].clientX; sy=e.touches[0].clientY; st=grid.scrollLeft;
-    },{passive:true});
-    grid.addEventListener('touchend',function(e){
-      if(!e.changedTouches.length) return; var dx=e.changedTouches[0].clientX-sx, dy=e.changedTouches[0].clientY-sy;
-      if(Math.abs(dx)>70 && Math.abs(dx)>Math.abs(dy)*1.25) go(dx<0?1:0);
+    // Horizontal page swipe only from sidebar; drawing keeps all gestures for pan.
+    var sx=0,sy=0;
+    side.addEventListener('touchstart',function(e){if(e.touches.length===1){sx=e.touches[0].clientX;sy=e.touches[0].clientY;}},{passive:true});
+    side.addEventListener('touchend',function(e){
+      if(!e.changedTouches.length)return;
+      var dx=e.changedTouches[0].clientX-sx,dy=e.changedTouches[0].clientY-sy;
+      if(dx<-85 && Math.abs(dx)>Math.abs(dy)*1.6) go(1);
     },{passive:true});
     grid.addEventListener('scroll',function(){
-      var page=grid.scrollLeft>grid.clientWidth*.45?1:0; b1.classList.toggle('active',page===0); b2.classList.toggle('active',page===1);
+      var page=grid.scrollLeft>grid.clientWidth*.45?1:0;
+      b1.classList.toggle('active',page===0); b2.classList.toggle('active',page===1);
     },{passive:true});
+    window.__dielineMobileGo=go;
   }
-  var tries=0, t=setInterval(function(){initMobileNav(); if(document.querySelector('.mobile-page-nav')||++tries>40) clearInterval(t)},150);
-  window.addEventListener('resize',function(){ if(window.innerWidth<=900) initMobileNav(); });
+  var tries=0,t=setInterval(function(){initMobileNav();if(document.querySelector('.mobile-page-nav')||++tries>50)clearInterval(t)},120);
+  window.addEventListener('resize',function(){if(window.innerWidth<=900)initMobileNav()});
 })();
 </script>
 </body></html>

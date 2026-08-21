@@ -16,6 +16,16 @@ Policy:
 - Existing localStorage keys and saved Job data remain compatible.
 - Legacy produced Jobs without historical approvalSnapshot remain warning-only.
 -->
+<!--
+V7.1.0 PRODUCTION STABLE
+Released from: V7.0.7.3 MOBILE HEADER REAL FIX
+Status: MASTER / PRODUCTION STABLE
+Policy:
+- Release-only version promotion; no functional logic changes.
+- Validated for desktop and mobile workflow.
+- Preserve this file as the stable production baseline.
+- Future feature development should branch/copy from this MASTER.
+-->
 <!DOCTYPE html>
 <html lang="vi">
 <head>
@@ -160,8 +170,8 @@ Policy:
 <script>
 // V7.0.1 responsive environment marker
 const V701_MOBILE_DESKTOP = Object.freeze({
-  version: "7.0.7.3",
-  mode: "MOBILE HEADER REAL FIX + DESKTOP",
+  version: "7.1.0",
+  mode: "PRODUCTION STABLE · MOBILE + DESKTOP",
   coreFrozen: true
 });
 
@@ -4119,7 +4129,7 @@ function DielineTool() {
   }, /*#__PURE__*/React.createElement("div", {
     className:"flex items-center justify-between gap-2"
   }, /*#__PURE__*/React.createElement("div", null,
-    /*#__PURE__*/React.createElement("div", {className:"text-[10px] font-mono text-emerald-300"}, "V7.0.7.3 · MOBILE HEADER REAL FIX"),
+    /*#__PURE__*/React.createElement("div", {className:"text-[10px] font-mono text-emerald-300"}, "V7.1.0 · PRODUCTION STABLE"),
     /*#__PURE__*/React.createElement("div", {className:"text-[7px] text-zinc-600 mt-0.5"}, "Luồng Job · ưu tiên xử lý · sản lượng")
   ), /*#__PURE__*/React.createElement("button", {
     onClick:()=>setProductionDashboardOpen(v=>!v),
@@ -5004,7 +5014,7 @@ function DielineTool() {
     className: "font-mono text-sm tracking-tight"
   }, "DIELINE TOOL"), /*#__PURE__*/React.createElement("span", {
     className: "px-2 py-0.5 rounded border border-emerald-800 bg-emerald-950/30 text-[9px] font-mono font-semibold text-emerald-300 whitespace-nowrap"
-  }, "V7.0.7.3 · MOBILE HEADER REAL FIX"), /*#__PURE__*/React.createElement("div", {
+  }, "V7.1.0 · PRODUCTION STABLE"), /*#__PURE__*/React.createElement("div", {
     className: "flex ml-2 rounded overflow-hidden border border-zinc-700 text-xs"
   }, [["die", "Khuôn"], ["imp", "Bình bài"], ["sole", "Sole"]].map(([k, lb]) => /*#__PURE__*/React.createElement("button", {
     key: k,

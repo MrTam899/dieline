@@ -51,7 +51,7 @@ Policy:
     .sidebar-panel{flex:0 0 100vw!important;width:100vw!important;max-width:100vw!important;min-width:100vw!important;height:100%!important;max-height:100%!important;overflow-y:auto!important;overflow-x:hidden!important;border-right:0!important;border-bottom:0!important;-webkit-overflow-scrolling:touch;overscroll-behavior-y:contain;padding:12px 12px 40px!important;touch-action:pan-y!important}
     .sidebar-panel>div{max-height:none!important}
     .sidebar-resize-handle,.sidebar-toggle{display:none!important}
-    .mobile-drawing-page{flex:0 0 100vw!important;width:100vw!important;min-width:100vw!important;max-width:100vw!important;height:100%!important;min-height:0!important;overflow:hidden!important;touch-action:none!important;user-select:none!important;-webkit-user-select:none!important}
+    .mobile-drawing-page{flex:0 0 100vw!important;width:100vw!important;min-width:100vw!important;max-width:100vw!important;height:100%!important;min-height:0!important;overflow:hidden!important;touch-action:none!important;user-select:none!important;-webkit-user-select:none!important;-webkit-touch-callout:none!important}
     .mobile-drawing-page svg{max-width:none!important;max-height:none!important;pointer-events:none}
     .absolute.top-2.right-2,.absolute.top-3.right-3{max-width:calc(100vw - 16px)!important;overflow-x:auto!important;overflow-y:hidden!important;white-space:nowrap!important;-webkit-overflow-scrolling:touch;scrollbar-width:none;touch-action:pan-x!important}
     .absolute.top-2.right-2::-webkit-scrollbar,.absolute.top-3.right-3::-webkit-scrollbar{display:none}
@@ -73,8 +73,8 @@ Policy:
 <script>
 // V7.0.1 responsive environment marker
 const V701_MOBILE_DESKTOP = Object.freeze({
-  version: "7.0.3",
-  mode: "MOBILE NAV + DESKTOP",
+  version: "7.0.5",
+  mode: "MOBILE TOUCH FIXED + DESKTOP",
   coreFrozen: true
 });
 
@@ -2038,6 +2038,7 @@ function DielineTool() {
   });
   const onPanDown = useCallback(e => {
     lastManualViewRef.current = Date.now();
+    if (e.pointerType === 'touch') return; // V7.0.5: touch uses dedicated handlers below
     if (e.pointerType === 'mouse' && e.button !== 0) return;
     if (e.target.closest && e.target.closest("button,input,select,textarea,a")) return;
     const r = panRef.current;
@@ -2063,6 +2064,27 @@ function DielineTool() {
     try { if (e.currentTarget.hasPointerCapture && e.currentTarget.hasPointerCapture(e.pointerId)) e.currentTarget.releasePointerCapture(e.pointerId); } catch {}
     e.currentTarget.style.cursor = 'grab';
   }, []);
+  // V7.0.5 — dedicated mobile touch pan for Khuôn / Bình bài / Sole.
+  const touchPanRef = useRef({ active:false, sx:0, sy:0, ox:0, oy:0 });
+  const onTouchPanStart = useCallback(e => {
+    if (!e.touches || e.touches.length !== 1) return;
+    if (e.target.closest && e.target.closest("button,input,select,textarea,a")) return;
+    lastManualViewRef.current = Date.now();
+    const t = e.touches[0], r = touchPanRef.current;
+    r.active = true; r.sx = t.clientX; r.sy = t.clientY; r.ox = panX; r.oy = panY;
+  }, [panX, panY]);
+  const onTouchPanMove = useCallback(e => {
+    const r = touchPanRef.current;
+    if (!r.active || !e.touches || e.touches.length !== 1) return;
+    const t = e.touches[0];
+    if (e.cancelable) e.preventDefault();
+    setPanX(r.ox + t.clientX - r.sx);
+    setPanY(r.oy + t.clientY - r.sy);
+  }, []);
+  const onTouchPanEnd = useCallback(() => {
+    touchPanRef.current.active = false;
+  }, []);
+
   const onWhl = useCallback(e => {
     lastManualViewRef.current = Date.now();
     e.preventDefault();
@@ -3966,7 +3988,7 @@ function DielineTool() {
   }, /*#__PURE__*/React.createElement("div", {
     className:"flex items-center justify-between gap-2"
   }, /*#__PURE__*/React.createElement("div", null,
-    /*#__PURE__*/React.createElement("div", {className:"text-[10px] font-mono text-emerald-300"}, "V7.0.4 · MOBILE TOUCH PRO"),
+    /*#__PURE__*/React.createElement("div", {className:"text-[10px] font-mono text-emerald-300"}, "V7.0.5 · MOBILE TOUCH FIXED"),
     /*#__PURE__*/React.createElement("div", {className:"text-[7px] text-zinc-600 mt-0.5"}, "Luồng Job · ưu tiên xử lý · sản lượng")
   ), /*#__PURE__*/React.createElement("button", {
     onClick:()=>setProductionDashboardOpen(v=>!v),
@@ -4851,7 +4873,7 @@ function DielineTool() {
     className: "font-mono text-sm tracking-tight"
   }, "DIELINE TOOL"), /*#__PURE__*/React.createElement("span", {
     className: "px-2 py-0.5 rounded border border-emerald-800 bg-emerald-950/30 text-[9px] font-mono font-semibold text-emerald-300 whitespace-nowrap"
-  }, "V7.0.4 · MOBILE TOUCH PRO"), /*#__PURE__*/React.createElement("div", {
+  }, "V7.0.5 · MOBILE TOUCH FIXED"), /*#__PURE__*/React.createElement("div", {
     className: "flex ml-2 rounded overflow-hidden border border-zinc-700 text-xs"
   }, [["die", "Khuôn"], ["imp", "Bình bài"], ["sole", "Sole"]].map(([k, lb]) => /*#__PURE__*/React.createElement("button", {
     key: k,
@@ -6042,6 +6064,10 @@ function DielineTool() {
     onPointerMove: onPanMove,
     onPointerUp: onPanUp,
     onPointerCancel: onPanUp,
+    onTouchStart: onTouchPanStart,
+    onTouchMove: onTouchPanMove,
+    onTouchEnd: onTouchPanEnd,
+    onTouchCancel: onTouchPanEnd,
     onPointerLeave: e => {
       if (e.pointerType === 'mouse') { panRef.current.dragging = false; e.currentTarget.style.cursor = 'grab'; }
     },
@@ -6063,7 +6089,9 @@ function DielineTool() {
     className: "text-[9px] font-mono text-zinc-500 mt-0.5"
   }, L, "×", W, "×", H, " mm", tab === "imp" && imp.count > 0 ? ` · ${imp.count}UP · ${paper.w}×${paper.h}` : "")), /*#__PURE__*/React.createElement("div", {
     className: "absolute top-2 right-2 z-10 flex items-center gap-1 bg-zinc-900/90 border border-zinc-700 rounded-lg px-1 py-0.5",
-    onMouseDown: e => e.stopPropagation()
+    onMouseDown: e => e.stopPropagation(),
+    onTouchStart: e => e.stopPropagation(),
+    onTouchMove: e => e.stopPropagation()
   }, /*#__PURE__*/React.createElement("button", {
     onClick: () => setZoom(v => Math.max(0.3, +(v - 0.2).toFixed(1))),
     className: "w-7 h-7 flex items-center justify-center text-zinc-300 hover:text-white text-sm font-bold"
